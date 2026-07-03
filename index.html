@@ -16,19 +16,6 @@
 
 <body>
   <div id="root"></div>
-  <script>
-    // Restore SPA route after a GitHub Pages 404 → redirect cycle.
-    (function () {
-      var params = new URLSearchParams(location.search);
-      var p = params.get('p');
-      if (p) {
-        params.delete('p');
-        var qs = params.toString();
-        var base = location.pathname.replace(/\/+$/, '');
-        history.replaceState(null, '', base + p + (qs ? '?' + qs : '') + location.hash);
-      }
-    })();
-  </script>
 </body>
 
 </html>
