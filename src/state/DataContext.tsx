@@ -14,6 +14,7 @@ import { useAuth } from './AuthContext';
 import { genId } from './types';
 import type {
   CloudAppState,
+  CalendarCommand,
   Course,
   CreatedBy,
   EventType,
@@ -66,6 +67,8 @@ const EMPTY_STATE: CloudAppState = {
   courses: [],
   tasks: [],
   scheduleItems: [],
+  deviceCalendarItems: [],
+  calendarCommands: [],
   smartReminders: [],
   agentMemory: '',
   agentName: '',
@@ -127,6 +130,33 @@ function normalizeScheduleItem(s: Record<string, unknown>): ScheduleItem {
   };
 }
 
+function normalizeCalendarCommand(c: Record<string, unknown>): CalendarCommand | null {
+  const action = c.action === 'upsert' || c.action === 'delete' ? c.action : null;
+  if (!action) return null;
+  const item = c.item && typeof c.item === 'object' ? normalizeScheduleItem(c.item as Record<string, unknown>) : null;
+  return {
+    id: String(c.id ?? genId()),
+    action,
+    item,
+    calendarId: typeof c.calendarId === 'string' ? c.calendarId : (item?.calendarId ?? null),
+    externalEventId: typeof c.externalEventId === 'string' ? c.externalEventId : (item?.externalEventId ?? null),
+    source: 'web',
+    createdAt: String(c.createdAt ?? new Date().toISOString()),
+  };
+}
+
+function calendarCommand(action: CalendarCommand['action'], item: ScheduleItem): CalendarCommand {
+  return {
+    id: genId(),
+    action,
+    item,
+    calendarId: item.calendarId ?? null,
+    externalEventId: item.externalEventId ?? (item.id.startsWith('dev:') ? item.id.slice(4) : null),
+    source: 'web',
+    createdAt: new Date().toISOString(),
+  };
+}
+
 export function DataProvider({ children }: { children: ReactNode }) {
   const { uid } = useAuth();
   const [state, setState] = useState<CloudAppState>(EMPTY_STATE);
@@ -151,10 +181,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         suppressNextPush.current = true;
         const rawTasks = (data?.tasks as Record<string, unknown>[]) ?? [];
         const rawSchedule = (data?.scheduleItems as Record<string, unknown>[]) ?? [];
+        const rawDeviceSchedule = (data?.deviceCalendarItems as Record<string, unknown>[]) ?? [];
+        const rawCommands = (data?.calendarCommands as Record<string, unknown>[]) ?? [];
         setState({
           courses: (data?.courses as Course[]) ?? [],
           tasks: rawTasks.map(normalizeTask),
           scheduleItems: rawSchedule.map(normalizeScheduleItem),
+          deviceCalendarItems: rawDeviceSchedule.map(normalizeScheduleItem),
+          calendarCommands: rawCommands.map(normalizeCalendarCommand).filter((c): c is CalendarCommand => c != null),
           smartReminders: (data?.smartReminders as SmartReminder[]) ?? [],
           agentMemory: String(data?.agentMemory ?? ''),
           agentName: String(data?.agentName ?? ''),
@@ -217,7 +251,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const courseById = useCallback((id?: string | null) => state.courses.find((c) => c.id === id), [state.courses]);
   const taskById = useCallback((id?: string | null) => state.tasks.find((t) => t.id === id), [state.tasks]);
-  const scheduleById = useCallback((id?: string | null) => state.scheduleItems.find((s) => s.id === id), [state.scheduleItems]);
+  const allScheduleItems = useMemo(
+    () => [...state.scheduleItems, ...state.deviceCalendarItems],
+    [state.scheduleItems, state.deviceCalendarItems],
+  );
+  const scheduleById = useCallback((id?: string | null) => allScheduleItems.find((s) => s.id === id), [allScheduleItems]);
 
   const addCourse: DataCtx['addCourse'] = (c) => {
     const course: Course = { createdBy: 'user', ...c, id: c.id ?? genId() };
@@ -280,10 +318,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mutate((prev) => ({
       ...prev,
       scheduleItems: prev.scheduleItems.map((s) => (s.id === id ? { ...s, ...patch, updatedAt: nowIso() } : s)),
+      deviceCalendarItems: prev.deviceCalendarItems.map((s) => {
+        if (s.id !== id) return s;
+        const item = { ...s, ...patch, updatedAt: nowIso() };
+        return item;
+      }),
+      calendarCommands: prev.deviceCalendarItems.some((s) => s.id === id)
+        ? [
+            ...prev.calendarCommands,
+            calendarCommand('upsert', { ...prev.deviceCalendarItems.find((s) => s.id === id)!, ...patch, updatedAt: nowIso() }),
+          ]
+        : prev.calendarCommands,
     }));
   };
   const deleteScheduleItem: DataCtx['deleteScheduleItem'] = (id) => {
-    mutate((prev) => ({ ...prev, scheduleItems: prev.scheduleItems.filter((s) => s.id !== id) }));
+    mutate((prev) => {
+      const deviceItem = prev.deviceCalendarItems.find((s) => s.id === id);
+      return {
+        ...prev,
+        scheduleItems: prev.scheduleItems.filter((s) => s.id !== id),
+        deviceCalendarItems: prev.deviceCalendarItems.filter((s) => s.id !== id),
+        calendarCommands: deviceItem ? [...prev.calendarCommands, calendarCommand('delete', deviceItem)] : prev.calendarCommands,
+      };
+    });
   };
 
   const addSmartReminder: DataCtx['addSmartReminder'] = (r) => {
@@ -325,7 +382,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       loaded,
       courses: state.courses,
       tasks: state.tasks,
-      scheduleItems: state.scheduleItems,
+      scheduleItems: allScheduleItems,
       smartReminders: state.smartReminders,
       agentName: state.agentName,
       agentMemory: state.agentMemory,
@@ -350,7 +407,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       deleteAllCloudData,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, state, tokenQuota, courseById, taskById, scheduleById, deleteAllCloudData],
+    [loaded, state, tokenQuota, courseById, taskById, scheduleById, allScheduleItems, deleteAllCloudData],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

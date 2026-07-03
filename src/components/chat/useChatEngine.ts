@@ -9,7 +9,6 @@ import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText } from './keywordInten
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
-import { PENDING_START_MINUTES_KEY, FOCUS_START_EVENT, clampMinutes } from '../focus/focusStore';
 import type { LocalChatMessage } from './types';
 
 const REASONING_KEY = 'sf_reasoning';
@@ -33,11 +32,24 @@ const EXTRA: Record<string, Record<string, string>> = {
 
 /** Max additional `get_schedule` tool round-trips before we give up and treat
  * whatever came back as the final reply (avoids an infinite loop). */
-const MAX_TOOL_ROUNDS = 2;
+const MAX_TOOL_ROUNDS = 3;
 
-// Actions whose device target (native calendar) doesn't exist on the web —
-// applied as a silent no-op with a short note appended to the message.
-const DEVICE_ONLY_ACTIONS = new Set(['set_agent_calendar_access', 'create_calendar', 'set_smart_notifications']);
+function estimateTokens(text: string): number {
+  if (!text) return 0;
+  let heb = 0;
+  let other = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0) ?? 0;
+    if ((c >= 0x0590 && c <= 0x05ff) || c === 0x05be || c === 0x05c3) heb++;
+    else other++;
+  }
+  return Math.ceil(heb / 2 + other / 4);
+}
+
+function billableTokens(rawTokens: number, multiplier: number): number {
+  if (rawTokens <= 0) return 0;
+  return Math.min(Math.max(1, Math.ceil(rawTokens * multiplier)), rawTokens);
+}
 
 interface PendingEntry {
   actions: Record<string, unknown>[];
@@ -60,22 +72,34 @@ export function useChatEngine() {
   const aiContextRef = useRef<ChatTurn[]>([]);
   const loadedPacksRef = useRef<Set<ChatPromptPack>>(new Set());
   const entitiesNeededRef = useRef(false);
+  const entityContextReadTrackedRef = useRef(false);
+  const systemPromptTokensTrackedRef = useRef(false);
+  const promptReadTokensRef = useRef(0);
+  const promptReadDescriptionsRef = useRef<string[]>([]);
+  const promptReadBreakdownRef = useRef<Record<string, number>>({});
   const pendingRef = useRef<Map<string, PendingEntry>>(new Map());
   const greetedRef = useRef(false);
 
   const greetingText = useCallback(() => t('chat_greeting').replace('{name}', agentDisplayName), [t, agentDisplayName]);
 
   const startFresh = useCallback(() => {
+    const greeting = greetingText();
     aiContextRef.current = [];
     loadedPacksRef.current = new Set();
     entitiesNeededRef.current = false;
+    entityContextReadTrackedRef.current = false;
+    systemPromptTokensTrackedRef.current = false;
+    promptReadTokensRef.current = 0;
+    promptReadDescriptionsRef.current = [];
+    promptReadBreakdownRef.current = {};
     pendingRef.current = new Map();
     setOutOfCredits(false);
+    aiContextRef.current = [{ role: 'assistant', content: greeting }];
     setMessages([
       {
         id: genId(),
         fromUser: false,
-        text: greetingText(),
+        text: greeting,
         quickReplies: [t('chat_btn_schedule'), t('chat_btn_task')],
       },
     ]);
@@ -93,6 +117,54 @@ export function useChatEngine() {
     setEffortState(e);
     localStorage.setItem(REASONING_KEY, e);
   }, []);
+
+  const promptReadDescription = useCallback(
+    (pack: ChatPromptPack) => {
+      switch (pack) {
+        case 'actionProtocol':
+          return t('chat_prompt_read_action');
+        case 'tasks':
+          return t('chat_prompt_read_tasks');
+        case 'courses':
+          return t('chat_prompt_read_courses');
+        case 'schedule':
+          return t('chat_prompt_read_schedule');
+        case 'focus':
+          return t('chat_prompt_read_focus');
+        case 'smartNotifications':
+          return t('chat_prompt_read_smart_notifications');
+        case 'identity':
+          return t('chat_prompt_read_identity');
+        case 'memory':
+          return t('chat_prompt_read_memory');
+      }
+    },
+    [t],
+  );
+
+  const addPromptReadContext = useCallback((description: string, text: string) => {
+    const tokens = estimateTokens(text);
+    if (tokens <= 0) return;
+    promptReadTokensRef.current += tokens;
+    promptReadDescriptionsRef.current.push(description);
+    promptReadBreakdownRef.current[description] = (promptReadBreakdownRef.current[description] ?? 0) + tokens;
+  }, []);
+
+  const includeEntityContextForPromptRead = useCallback(() => {
+    entitiesNeededRef.current = true;
+    if (entityContextReadTrackedRef.current) return;
+    entityContextReadTrackedRef.current = true;
+    addPromptReadContext(t('chat_prompt_read_app_data'), buildEntitiesContext(data.courses, data.tasks, data.smartReminders));
+  }, [addPromptReadContext, data.courses, data.smartReminders, data.tasks, t]);
+
+  const addLoadedPack = useCallback(
+    (pack: ChatPromptPack) => {
+      if (loadedPacksRef.current.has(pack)) return;
+      loadedPacksRef.current.add(pack);
+      addPromptReadContext(promptReadDescription(pack), promptPackInstruction(pack));
+    },
+    [addPromptReadContext, promptReadDescription],
+  );
 
   const pushAiMessage = useCallback((text: string, opts: { tokenUsage?: ChatTokenUsage; pendingActions?: Record<string, unknown>[]; focusMinutes?: number | null } = {}) => {
     const id = genId();
@@ -116,11 +188,11 @@ export function useChatEngine() {
     const lower = text.toLowerCase();
     const detected = packsForText(lower);
     for (const pack of detected) {
-      if (PACKS_NEEDING_ACTION_PROTOCOL.includes(pack)) loadedPacksRef.current.add('actionProtocol');
-      loadedPacksRef.current.add(pack);
-      if (PACKS_NEEDING_ENTITIES.includes(pack)) entitiesNeededRef.current = true;
+      if (PACKS_NEEDING_ACTION_PROTOCOL.includes(pack)) addLoadedPack('actionProtocol');
+      addLoadedPack(pack);
+      if (PACKS_NEEDING_ENTITIES.includes(pack)) includeEntityContextForPromptRead();
     }
-  }, []);
+  }, [addLoadedPack, includeEntityContextForPromptRead]);
 
   const buildMessages = useCallback((): ChatTurn[] => {
     const today = new Date().toISOString().slice(0, 10);
@@ -138,11 +210,52 @@ export function useChatEngine() {
     return turns;
   }, [data.agentName, data.agentMemory, data.courses, data.tasks, data.smartReminders]);
 
+  const estimateSystemInstructionTokens = useCallback((): number => {
+    const today = new Date().toISOString().slice(0, 10);
+    let tokens = estimateTokens(systemPrompt(today, data.agentName));
+    if (data.agentMemory.trim()) tokens += estimateTokens(`[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}`);
+    if (entitiesNeededRef.current) tokens += estimateTokens(buildEntitiesContext(data.courses, data.tasks, data.smartReminders));
+    for (const pack of loadedPacksRef.current) tokens += estimateTokens(promptPackInstruction(pack));
+    return tokens;
+  }, [data.agentMemory, data.agentName, data.courses, data.smartReminders, data.tasks]);
+
+  const applyHistoryDiscount = useCallback(
+    (raw: ChatTokenUsage, currentEffort: ReasoningEffort): ChatTokenUsage => {
+      const multiplier = currentEffort === 'cheap' ? 0.5 : 1;
+      const estimatedSystem = estimateSystemInstructionTokens();
+      const historyTokens = Math.min(Math.max(0, raw.promptTokens - estimatedSystem), raw.promptTokens);
+      const systemAndOutput = estimatedSystem + raw.completionTokens;
+      const historyCharged = billableTokens(historyTokens, 0.1 * multiplier);
+      const chargedTokens = billableTokens(systemAndOutput, multiplier) + historyCharged;
+      return {
+        ...raw,
+        costMultiplier: raw.costMultiplier ?? multiplier,
+        historyTokensCharged: historyCharged,
+        chargedTokens,
+      };
+    },
+    [estimateSystemInstructionTokens],
+  );
+
   const runAiLoop = useCallback(
     async (currentEffort: ReasoningEffort) => {
       setTyping(true);
       try {
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+          if (!systemPromptTokensTrackedRef.current) {
+            systemPromptTokensTrackedRef.current = true;
+            const today = new Date().toISOString().slice(0, 10);
+            const sysPrompt = systemPrompt(today, data.agentName);
+            const memory = data.agentMemory.trim() ? `[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}` : '';
+            addPromptReadContext(t('chat_prompt_read_system'), memory ? `${sysPrompt}\n${memory}` : sysPrompt);
+          }
+          const visiblePromptReadTokens = promptReadTokensRef.current;
+          const visiblePromptReadDescriptions = [...promptReadDescriptionsRef.current];
+          const visiblePromptReadBreakdown = { ...promptReadBreakdownRef.current };
+          promptReadTokensRef.current = 0;
+          promptReadDescriptionsRef.current = [];
+          promptReadBreakdownRef.current = {};
+
           const turns = buildMessages();
           const result = await completeChat(turns, {
             reasoningEffort: reasoningApiValue(currentEffort),
@@ -150,6 +263,17 @@ export function useChatEngine() {
             idToken: await idToken(),
             displayName,
           });
+          const usage = result.usage
+            ? applyHistoryDiscount(
+                {
+                  ...result.usage,
+                  promptReadTokens: visiblePromptReadTokens,
+                  promptReadDescriptions: visiblePromptReadDescriptions,
+                  promptReadBreakdown: visiblePromptReadBreakdown,
+                },
+                currentEffort,
+              )
+            : undefined;
           const replyText = result.text;
           aiContextRef.current = [...aiContextRef.current, { role: 'assistant', content: replyText }];
 
@@ -159,6 +283,7 @@ export function useChatEngine() {
           if (parsed && parsed.tool === 'get_schedule' && round < MAX_TOOL_ROUNDS) {
             const lookup = scheduleForDate(typeof parsed.date === 'string' ? parsed.date : undefined, data.scheduleItems);
             const encoded = JSON.stringify(lookup);
+            addPromptReadContext(t('chat_prompt_read_schedule_result'), encoded);
             aiContextRef.current = [...aiContextRef.current, { role: 'user', content: encoded }];
             continue;
           }
@@ -170,44 +295,26 @@ export function useChatEngine() {
           if (action === 'set_agent_name') {
             data.setAgentName(typeof parsed?.name === 'string' ? parsed.name : '');
             pushAiMessage(rawMessage || t('agent_renamed').replace('{name}', (typeof parsed?.name === 'string' ? parsed.name : '').trim() || t('agent_default_name')), {
-              tokenUsage: result.usage,
+              tokenUsage: usage,
             });
             return;
           }
           if (action === 'save_memory') {
             data.setAgentMemory(typeof parsed?.memory === 'string' ? parsed.memory : '');
-            pushAiMessage(rawMessage || t('agent_memory_saved'), { tokenUsage: result.usage });
-            return;
-          }
-          if (action === 'start_focus') {
-            const minutesRaw = typeof parsed?.minutes === 'number' ? parsed.minutes : Number(parsed?.minutes);
-            const minutes = Number.isFinite(minutesRaw) && minutesRaw > 0 ? clampMinutes(minutesRaw) : null;
-            if (minutes) {
-              localStorage.setItem(PENDING_START_MINUTES_KEY, String(minutes));
-              window.dispatchEvent(new Event(FOCUS_START_EVENT));
-            }
-            pushAiMessage(rawMessage || (minutes ? t('chat_focus_started').replace('{min}', String(minutes)) : t('chat_error')), {
-              tokenUsage: result.usage,
-              focusMinutes: minutes,
-            });
-            return;
-          }
-          if (action && DEVICE_ONLY_ACTIONS.has(action)) {
-            const note = tt('chat_web_unavailable_note');
-            pushAiMessage(rawMessage ? `${rawMessage}\n${note}` : note, { tokenUsage: result.usage });
+            pushAiMessage(rawMessage || t('agent_memory_saved'), { tokenUsage: usage });
             return;
           }
 
           const mutations = parsed ? mutationActionsFromJson(parsed) : [];
           if (mutations.length > 0) {
             const message = rawMessage || t('chat_pending_change').replace('{count}', String(mutations.length));
-            pushAiMessage(message, { tokenUsage: result.usage, pendingActions: mutations });
+            pushAiMessage(message, { tokenUsage: usage, pendingActions: mutations });
             return;
           }
 
           // Plain conversational reply — either free text, or a JSON envelope
           // carrying just `{"message": "..."}` with no recognized action.
-          pushAiMessage(rawMessage || replyText, { tokenUsage: result.usage });
+          pushAiMessage(rawMessage || replyText, { tokenUsage: usage });
           return;
         }
       } catch (e) {
@@ -221,7 +328,7 @@ export function useChatEngine() {
         setTyping(false);
       }
     },
-    [buildMessages, data, displayName, idToken, pushAiMessage, t, tt],
+    [addPromptReadContext, applyHistoryDiscount, buildMessages, data, displayName, idToken, pushAiMessage, t, tt],
   );
 
   const sendText = useCallback(
@@ -229,7 +336,7 @@ export function useChatEngine() {
       const trimmed = text.trim();
       if (!trimmed || typing) return;
       ensureLazyPacks(trimmed);
-      setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: trimmed }]);
+      setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: trimmed, inputTokens: estimateTokens(trimmed) }]);
       aiContextRef.current = [...aiContextRef.current, { role: 'user', content: trimmed }];
       void runAiLoop(effort);
     },
@@ -242,21 +349,28 @@ export function useChatEngine() {
       if (!entry || entry.resolved !== 'pending') return;
       entry.resolved = 'approved';
       const summary = applyMutationActions(entry.actions, data, t);
+      entityContextReadTrackedRef.current = false;
+      includeEntityContextForPromptRead();
       aiContextRef.current = [...aiContextRef.current, { role: 'assistant', content: summary }];
       setMessages((prev) => [
         ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'approved' as const } } : m)),
         { id: genId(), fromUser: false, text: summary },
       ]);
     },
-    [data, t],
+    [data, includeEntityContextForPromptRead, t],
   );
 
   const rejectPending = useCallback((id: string) => {
     const entry = pendingRef.current.get(id);
     if (!entry || entry.resolved !== 'pending') return;
     entry.resolved = 'rejected';
-    setMessages((prev) => prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'rejected' as const } } : m)));
-  }, []);
+    const text = t('chat_change_rejected_followup');
+    aiContextRef.current = [...aiContextRef.current, { role: 'assistant', content: text }];
+    setMessages((prev) => [
+      ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'rejected' as const } } : m)),
+      { id: genId(), fromUser: false, text },
+    ]);
+  }, [t]);
 
   const newChat = useCallback(() => {
     if (typing) return;

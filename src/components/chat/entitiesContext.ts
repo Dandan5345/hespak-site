@@ -39,8 +39,7 @@ export function buildEntitiesContext(courses: Course[], tasks: Task[], smartRemi
 /** Answers the `{"tool":"get_schedule","date":"YYYY-MM-DD"}` read-only tool
  * call locally from app scheduleItems — same day-matching semantics as the
  * Dart `_scheduleForDate`: exact date match, multi-day span, or weekly-repeat
- * weekday match. There is no device/external calendar on web, so `external`
- * is always false here. */
+ * weekday match. Device-calendar mirror items are marked as external. */
 export function scheduleForDate(dateStr: string | undefined, scheduleItems: ScheduleItem[]): { date: string | undefined; events: unknown[] } {
   const date = dateStr ? new Date(dateStr) : null;
   if (!date || Number.isNaN(date.getTime())) return { date: dateStr, events: [] };
@@ -64,7 +63,7 @@ export function scheduleForDate(dateStr: string | undefined, scheduleItems: Sche
       end: e.endDateTime,
       weeklyRepeat: e.weeklyRepeat,
       allDay: e.allDay,
-      external: false,
+      external: e.createdBy === 'device',
       calendarId: e.calendarId ?? null,
     }));
   return { date: dateStr, events };

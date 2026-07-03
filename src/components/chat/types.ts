@@ -16,6 +16,7 @@ export interface LocalChatMessage {
   id: string;
   fromUser: boolean;
   text: string;
+  inputTokens?: number | null;
   tokenUsage?: ChatTokenUsage | null;
   pending?: PendingMutation | null;
   /** Minutes for a just-started focus session, so the bubble can offer a

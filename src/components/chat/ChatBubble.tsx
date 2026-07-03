@@ -21,6 +21,8 @@ interface Props {
 function TokenBreakdown({ usage, tokens }: { usage: NonNullable<LocalChatMessage['tokenUsage']>; tokens: SfTokens }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const reasoning = usage.reasoningTokens ?? 0;
+  const writing = Math.max(0, usage.completionTokens - reasoning);
   return (
     <>
       <button
@@ -39,12 +41,17 @@ function TokenBreakdown({ usage, tokens }: { usage: NonNullable<LocalChatMessage
           className="mt-1.5 rounded-[var(--sf-radius-sm)] px-3 py-2 text-[11px] leading-relaxed"
           style={{ background: tokens.surface2, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}`, color: tokens.textDim }}
         >
-          {usage.reasoningTokens != null && usage.reasoningTokens > 0 && (
-            <div>🧠 {t('chat_reasoning_tokens')}: {fmtTokens(usage.reasoningTokens)}</div>
-          )}
-          <div>✍️ {t('chat_output_tokens')}: {fmtTokens(usage.completionTokens)}</div>
-          <div>📊 {t('chat_total_output')}: {fmtTokens(usage.completionTokens + (usage.reasoningTokens ?? 0))}</div>
-          {usage.promptReadTokens > 0 && <div>📖 {t('chat_instruction_context')}: {fmtTokens(usage.promptReadTokens)}</div>}
+          <div>{t('chat_tokens_reasoning')}: {fmtTokens(reasoning)}</div>
+          <div>{t('chat_tokens_writing_output')}: {fmtTokens(writing)}</div>
+          <div>{t('chat_tokens_output_total')}: {fmtTokens(usage.completionTokens)}</div>
+          {usage.promptReadTokens > 0 &&
+            (Object.keys(usage.promptReadBreakdown).length > 0 ? (
+              Object.entries(usage.promptReadBreakdown).map(([label, count]) => (
+                <div key={label}>{t('chat_tokens_instruction_context').replace('{item}', label)}: {fmtTokens(count)}</div>
+              ))
+            ) : (
+              <div>{t('chat_tokens_prompt_read')}: {fmtTokens(usage.promptReadTokens)}</div>
+            ))}
           {usage.costMultiplier !== 1 && <div>🔢 {t('chat_multiplier')}: ×{usage.costMultiplier}</div>}
           {usage.historyTokensCharged > 0 && <div>📝 {t('chat_history_portion')}: {fmtTokens(usage.historyTokensCharged)} (10%)</div>}
           <div className="mt-0.5 font-bold">💰 {t('chat_charged')}: {fmtTokens(usage.chargedTokens)}</div>
@@ -121,9 +128,9 @@ export function ChatBubble({ message, tokens, onApprove, onReject, onGoFocus, on
         {!mine && message.tokenUsage && (
           <TokenBreakdown usage={message.tokenUsage} tokens={tokens} />
         )}
-        {mine && message.tokenUsage && (message.tokenUsage.promptTokens > 0) && (
+        {mine && (message.inputTokens ?? 0) > 0 && (
           <div className="text-[10px] font-medium mt-0.5 mr-1 opacity-60" style={{ color: tokens.textFaint }}>
-            {fmtTokens(message.tokenUsage.promptTokens)} {t('chat_input_tokens')}
+            {t('chat_tokens_user_input_line').replace('{count}', fmtTokens(message.inputTokens ?? 0))}
           </div>
         )}
 

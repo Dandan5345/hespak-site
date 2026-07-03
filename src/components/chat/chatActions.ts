@@ -5,6 +5,7 @@
 // AppController._applyActions in lib/state/app_controller.dart.
 import type { useData } from '../../state/DataContext';
 import type { EventType, Urgency } from '../../state/types';
+import { PENDING_START_MINUTES_KEY, FOCUS_START_EVENT, clampMinutes } from '../focus/focusStore';
 
 type Data = ReturnType<typeof useData>;
 type Json = Record<string, unknown>;
@@ -22,9 +23,13 @@ export const MUTATION_ACTIONS = new Set([
   'create_schedule_item',
   'update_schedule_item',
   'delete_schedule_item',
+  'start_focus',
+  'set_smart_notifications',
   'create_smart_reminder',
   'update_smart_reminder',
   'delete_smart_reminder',
+  'set_agent_calendar_access',
+  'create_calendar',
 ]);
 
 /** Mirrors AppController._mutationListFromJson: a reply is either a single
@@ -58,6 +63,7 @@ export function applyMutationActions(actions: Json[], data: Data, t: (key: strin
   let created = 0;
   let updated = 0;
   let deleted = 0;
+  const extraParts: string[] = [];
 
   for (const a of actions) {
     if (!a || typeof a !== 'object') continue;
@@ -184,6 +190,22 @@ export function applyMutationActions(actions: Json[], data: Data, t: (key: strin
         deleted++;
         break;
       }
+      case 'start_focus': {
+        const minutesRaw = num(a.minutes) ?? Number(a.minutes);
+        const minutes = Number.isFinite(minutesRaw) && minutesRaw > 0 ? clampMinutes(minutesRaw) : null;
+        if (minutes) {
+          localStorage.setItem(PENDING_START_MINUTES_KEY, String(minutes));
+          window.dispatchEvent(new Event(FOCUS_START_EVENT));
+          extraParts.push(t('chat_focus_started').replace('{min}', String(minutes)));
+        }
+        break;
+      }
+      case 'set_smart_notifications': {
+        if (typeof a.enabled === 'boolean') {
+          extraParts.push(t(a.enabled ? 'chat_smart_notif_on' : 'chat_smart_notif_off'));
+        }
+        break;
+      }
       case 'create_smart_reminder': {
         const when = str(a.dateTime);
         if (!when) break;
@@ -223,6 +245,14 @@ export function applyMutationActions(actions: Json[], data: Data, t: (key: strin
         deleted++;
         break;
       }
+      case 'set_agent_calendar_access': {
+        extraParts.push(t('chat_mobile_only_action'));
+        break;
+      }
+      case 'create_calendar': {
+        extraParts.push(t('chat_mobile_only_action'));
+        break;
+      }
       default:
         break;
     }
@@ -232,6 +262,7 @@ export function applyMutationActions(actions: Json[], data: Data, t: (key: strin
   if (created > 0) parts.push(t('chat_actions_created').replace('{count}', String(created)));
   if (updated > 0) parts.push(t('chat_actions_updated').replace('{count}', String(updated)));
   if (deleted > 0) parts.push(t('chat_actions_deleted').replace('{count}', String(deleted)));
+  parts.push(...extraParts);
   if (parts.length === 0) return t('chat_actions_none');
   return `${t('chat_actions_done')} ${parts.join(' · ')}`;
 }

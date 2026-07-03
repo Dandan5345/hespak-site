@@ -65,6 +65,16 @@ export interface ScheduleItem {
   updatedAt: string;
 }
 
+export interface CalendarCommand {
+  id: string;
+  action: 'upsert' | 'delete';
+  item?: ScheduleItem | null;
+  calendarId?: string | null;
+  externalEventId?: string | null;
+  source: 'web';
+  createdAt: string;
+}
+
 export interface SmartReminder {
   id: string;
   notifId: number;
@@ -143,6 +153,8 @@ export interface CloudAppState {
   courses: Course[];
   tasks: Task[];
   scheduleItems: ScheduleItem[];
+  deviceCalendarItems: ScheduleItem[];
+  calendarCommands: CalendarCommand[];
   smartReminders: SmartReminder[];
   agentMemory: string;
   agentName: string;

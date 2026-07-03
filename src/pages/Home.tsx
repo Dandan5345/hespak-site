@@ -303,9 +303,9 @@ function DailyBriefing({
       openToday.length === 0
         ? t('briefing_morning_empty')
         : t('briefing_morning_text')
-            .replace('{free}', String(freeHoursToday(todayEvents)))
-            .replace('{count}', String(openToday.length))
-            .replace('{task}', openToday[0].title);
+          .replace('{free}', String(freeHoursToday(todayEvents)))
+          .replace('{count}', String(openToday.length))
+          .replace('{task}', openToday[0].title);
   } else {
     const total = tasks.filter((task) => isDueToday(task, now)).length;
     const done = tasks.filter((task) => task.isCompleted && completedOnDay(task, now)).length;

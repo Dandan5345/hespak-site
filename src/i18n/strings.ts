@@ -1105,6 +1105,10 @@ export const translations: Record<string, Record<string, string>> = {
     'he': '📅 יצרתי יומן חדש: {name}',
     'en': '📅 Created a new calendar: {name}',
   },
+  'chat_mobile_only_action': {
+    'he': 'זמין באפליקציה הניידת',
+    'en': 'Available in the mobile app',
+  },
 
   // --- agent memory ---
   'agent_memory_title': { 'he': 'זיכרון הסוכן', 'en': 'Agent memory' },
