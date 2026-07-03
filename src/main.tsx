@@ -14,7 +14,7 @@ createRoot(document.getElementById('root')!).render(
       <I18nProvider>
         <AuthProvider>
           <DataProvider>
-            <BrowserRouter>
+            <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
               <App />
             </BrowserRouter>
           </DataProvider>
