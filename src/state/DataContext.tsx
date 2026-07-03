@@ -145,13 +145,20 @@ function normalizeCalendarCommand(c: Record<string, unknown>): CalendarCommand |
   };
 }
 
+function externalEventIdFromMirrorId(id: string): string | null {
+  if (!id.startsWith('dev:')) return null;
+  const rest = id.slice(4);
+  const sep = rest.indexOf(':');
+  return sep < 0 ? rest : rest.slice(sep + 1);
+}
+
 function calendarCommand(action: CalendarCommand['action'], item: ScheduleItem): CalendarCommand {
   return {
     id: genId(),
     action,
     item,
     calendarId: item.calendarId ?? null,
-    externalEventId: item.externalEventId ?? (item.id.startsWith('dev:') ? item.id.slice(4) : null),
+    externalEventId: item.externalEventId ?? externalEventIdFromMirrorId(item.id),
     source: 'web',
     createdAt: new Date().toISOString(),
   };
