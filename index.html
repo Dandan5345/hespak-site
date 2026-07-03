@@ -16,5 +16,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Restore SPA route after a GitHub Pages 404 → redirect cycle
+      (function() {
+        var p = sessionStorage.getItem('sf_redirect');
+        if (p) {
+          sessionStorage.removeItem('sf_redirect');
+          history.replaceState(null, '', p + location.search);
+        }
+      })();
+    </script>
   </body>
 </html>
