@@ -15,12 +15,12 @@
   <body>
     <div id="root"></div>
     <script>
-      // Restore SPA route after a GitHub Pages 404 → redirect cycle
+      // Restore SPA route after a GitHub Pages 404 → redirect cycle.
       (function() {
         var p = sessionStorage.getItem('sf_redirect');
-        if (p) {
+        if (p && p !== '/') {
           sessionStorage.removeItem('sf_redirect');
-          history.replaceState(null, '', p + location.search);
+          history.replaceState(null, '', location.pathname.replace(/\/+$/, '') + p + location.search + location.hash);
         }
       })();
     </script>
