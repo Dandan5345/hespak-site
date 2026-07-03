@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-  <meta charset="utf-8">
-  <title>הספק</title>
-  <script>
-    // SPA fallback for GitHub Pages. When a hard-refresh hits a route that
-    // doesn't exist as a file (e.g. /hespak-site/calendar), GitHub Pages
-    // serves this 404.html. We redirect to the SPA entry point, preserving
-    // the original path so React Router can restore the correct view.
-    (function() {
-      var repo = '/hespak-site';
-      // Store pathname only (no search/hash — those are on the redirected URL)
-      var path = location.pathname;
-      var appPath = '/';
-      if (path.indexOf(repo + '/') === 0) {
-        appPath = path.slice(repo.length) || '/';
-      }
-      sessionStorage.setItem('sf_redirect', appPath);
-      // Carry query + hash through to the SPA entry
-      location.replace(repo + '/' + location.search + location.hash);
-    })();
-  </script>
+    <meta charset="utf-8">
+    <title>הספק</title>
+    <script>
+        // SPA fallback for GitHub Pages.
+        // Example: /hespak-site/calendar → /hespak-site/?p=/calendar
+        (function () {
+            var repo = '/hespak-site';
+            var path = location.pathname;
+            var appPath = '/';
+            if (path.indexOf(repo + '/') === 0) {
+                appPath = path.slice(repo.length) || '/';
+            } else if (path.indexOf(repo) === 0) {
+                appPath = '/';
+            }
+            var q = location.search ? location.search + '&p=' + encodeURIComponent(appPath) : '?p=' + encodeURIComponent(appPath);
+            location.replace(repo + '/' + q + location.hash);
+        })();
+    </script>
 </head>
+
 <body></body>
+
 </html>
