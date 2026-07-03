@@ -43,7 +43,7 @@ export default function Tasks() {
   const filtered = useMemo(() => {
     let list = tasks;
     if (courseFilterId) list = list.filter((x) => x.courseId === courseFilterId);
-    if (filter === 'high') list = list.filter((x) => x.urgency === 'urgent' || x.urgency === 'very_urgent');
+    if (filter === 'high') list = list.filter((x) => x.urgency === 'urgent' || x.urgency === 'veryUrgent');
     else if (filter === 'today') list = list.filter((x) => isDueToday(x.dueDateTime));
     else if (filter === 'done') list = list.filter((x) => x.isCompleted);
 

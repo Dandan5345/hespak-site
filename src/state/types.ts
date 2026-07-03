@@ -2,15 +2,15 @@
 // names and JSON shape identical — both apps read/write the same Firestore
 // document (users/{uid}/appState/data), so any drift breaks cross-device sync.
 
-export type Urgency = 'not_urgent' | 'urgent' | 'very_urgent';
-export const URGENCY_VALUES: Urgency[] = ['not_urgent', 'urgent', 'very_urgent'];
-export const DEFAULT_URGENCY: Urgency = 'not_urgent';
+export type Urgency = 'notUrgent' | 'urgent' | 'veryUrgent';
+export const URGENCY_VALUES: Urgency[] = ['notUrgent', 'urgent', 'veryUrgent'];
+export const DEFAULT_URGENCY: Urgency = 'notUrgent';
 
 export function urgencyLabelKey(u: Urgency): string {
   switch (u) {
     case 'urgent':
       return 'urgency_urgent';
-    case 'very_urgent':
+    case 'veryUrgent':
       return 'urgency_very_urgent';
     default:
       return 'urgency_not_urgent';
@@ -45,7 +45,7 @@ export interface Task {
   updatedAt: string;
 }
 
-export type EventType = 'class' | 'exam' | 'submission' | 'personal';
+export type EventType = 'classLesson' | 'exam' | 'submission' | 'personal';
 
 export interface ScheduleItem {
   id: string;

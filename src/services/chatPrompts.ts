@@ -57,10 +57,10 @@ export const taskInstruction = `[הוראת פעולה פנימית - משימו
 בעריכה/מחיקה השתמש רק ב-taskId שקיבלת בנתוני האפליקציה. אם המשתמש מתאר משימה בשם ויש כמה התאמות, שאל קודם.
 
 יצירת משימה:
-{"message":"אני עומד ליצור משימה בשם ...","action":"create_task","title":"...","description":"","courseId":"","dueDateTime":"YYYY-MM-DDTHH:mm","urgency":"not_urgent|urgent|very_urgent","estimatedDurationMinutes":120}
+{"message":"אני עומד ליצור משימה בשם ...","action":"create_task","title":"...","description":"","courseId":"","dueDateTime":"YYYY-MM-DDTHH:mm","urgency":"notUrgent|urgent|veryUrgent","estimatedDurationMinutes":120}
 
 עריכת משימה קיימת - שלח רק שדות שרוצים לשנות, id חובה:
-{"message":"אני עומד לעדכן את המשימה ...","action":"update_task","id":"<taskId>","title":"...","description":"","courseId":"<courseId או ריק למחיקה>","dueDateTime":"YYYY-MM-DDTHH:mm","urgency":"not_urgent|urgent|very_urgent","estimatedDurationMinutes":120,"isCompleted":false}
+{"message":"אני עומד לעדכן את המשימה ...","action":"update_task","id":"<taskId>","title":"...","description":"","courseId":"<courseId או ריק למחיקה>","dueDateTime":"YYYY-MM-DDTHH:mm","urgency":"notUrgent|urgent|veryUrgent","estimatedDurationMinutes":120,"isCompleted":false}
 
 מחיקת משימה:
 {"message":"אני עומד למחוק את המשימה ... וגם את משבצות הלו״ז המקושרות אליה","action":"delete_task","id":"<taskId>"}

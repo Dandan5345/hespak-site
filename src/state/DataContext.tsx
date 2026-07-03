@@ -15,9 +15,12 @@ import { genId } from './types';
 import type {
   CloudAppState,
   Course,
+  CreatedBy,
+  EventType,
   ScheduleItem,
   SmartReminder,
   Task,
+  Urgency,
   TokenQuota,
 } from './types';
 
@@ -68,6 +71,62 @@ const EMPTY_STATE: CloudAppState = {
   agentName: '',
 };
 
+/** Normalize Urgency values from Flutter's camelCase (or old snake_case) to
+ * the canonical camelCase format used by both apps. */
+function normUrgency(u: unknown): Urgency {
+  const s = typeof u === 'string' ? u : '';
+  if (s === 'notUrgent' || s === 'not_urgent') return 'notUrgent';
+  if (s === 'veryUrgent' || s === 'very_urgent') return 'veryUrgent';
+  if (s === 'urgent') return 'urgent';
+  return 'notUrgent';
+}
+
+/** Normalize EventType values from Flutter's 'classLesson' to web's canonical form. */
+function normEventType(t: unknown): EventType {
+  const s = typeof t === 'string' ? t : '';
+  if (s === 'classLesson' || s === 'class') return 'classLesson';
+  if (s === 'exam') return 'exam';
+  if (s === 'submission') return 'submission';
+  return 'personal';
+}
+
+function normalizeTask(t: Record<string, unknown>): Task {
+  return {
+    id: String(t.id ?? ''),
+    title: String(t.title ?? ''),
+    description: typeof t.description === 'string' ? t.description : null,
+    courseId: typeof t.courseId === 'string' ? t.courseId : null,
+    dueDateTime: typeof t.dueDateTime === 'string' ? t.dueDateTime : null,
+    urgency: normUrgency(t.urgency),
+    estimatedDurationMinutes: typeof t.estimatedDurationMinutes === 'number' ? t.estimatedDurationMinutes : null,
+    isCompleted: Boolean(t.isCompleted),
+    completedAt: typeof t.completedAt === 'string' ? t.completedAt : null,
+    createdBy: (t.createdBy as CreatedBy) ?? 'user',
+    createdAt: String(t.createdAt ?? new Date().toISOString()),
+    updatedAt: String(t.updatedAt ?? new Date().toISOString()),
+  };
+}
+
+function normalizeScheduleItem(s: Record<string, unknown>): ScheduleItem {
+  return {
+    id: String(s.id ?? ''),
+    taskId: typeof s.taskId === 'string' ? s.taskId : null,
+    title: String(s.title ?? ''),
+    description: typeof s.description === 'string' ? s.description : null,
+    startDateTime: String(s.startDateTime ?? new Date().toISOString()),
+    endDateTime: String(s.endDateTime ?? new Date().toISOString()),
+    type: normEventType(s.type),
+    weeklyRepeat: Boolean(s.weeklyRepeat),
+    allDay: Boolean(s.allDay),
+    isCompleted: Boolean(s.isCompleted),
+    externalEventId: typeof s.externalEventId === 'string' ? s.externalEventId : null,
+    calendarId: typeof s.calendarId === 'string' ? s.calendarId : null,
+    createdBy: (s.createdBy as CreatedBy) ?? 'user',
+    createdAt: String(s.createdAt ?? new Date().toISOString()),
+    updatedAt: String(s.updatedAt ?? new Date().toISOString()),
+  };
+}
+
 export function DataProvider({ children }: { children: ReactNode }) {
   const { uid } = useAuth();
   const [state, setState] = useState<CloudAppState>(EMPTY_STATE);
@@ -88,15 +147,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const unsub = onSnapshot(
       ref,
       (snap) => {
-        const data = snap.data() as Partial<CloudAppState> | undefined;
+        const data = snap.data() as Record<string, unknown> | undefined;
         suppressNextPush.current = true;
+        const rawTasks = (data?.tasks as Record<string, unknown>[]) ?? [];
+        const rawSchedule = (data?.scheduleItems as Record<string, unknown>[]) ?? [];
         setState({
-          courses: data?.courses ?? [],
-          tasks: data?.tasks ?? [],
-          scheduleItems: data?.scheduleItems ?? [],
-          smartReminders: data?.smartReminders ?? [],
-          agentMemory: data?.agentMemory ?? '',
-          agentName: data?.agentName ?? '',
+          courses: (data?.courses as Course[]) ?? [],
+          tasks: rawTasks.map(normalizeTask),
+          scheduleItems: rawSchedule.map(normalizeScheduleItem),
+          smartReminders: (data?.smartReminders as SmartReminder[]) ?? [],
+          agentMemory: String(data?.agentMemory ?? ''),
+          agentName: String(data?.agentName ?? ''),
         });
         setLoaded(true);
       },

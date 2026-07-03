@@ -88,7 +88,7 @@ export function TaskRow({ task, course, onToggle, onEdit, onDelete }: Props) {
           {due && (
             <span
               className="text-xs font-semibold whitespace-nowrap"
-              style={{ color: overdue ? urgencyMeta('very_urgent').color : tokens.textDim }}
+              style={{ color: overdue ? urgencyMeta('veryUrgent').color : tokens.textDim }}
             >
               📅 {due}
             </span>

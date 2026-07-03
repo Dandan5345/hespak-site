@@ -109,7 +109,7 @@ export function applyMutationActions(actions: Json[], data: Data, t: (key: strin
           description: str(a.description) ?? null,
           courseId: str(a.courseId) || null,
           dueDateTime: str(a.dueDateTime) ?? null,
-          urgency: (str(a.urgency) as Urgency | undefined) ?? 'not_urgent',
+          urgency: (str(a.urgency) as Urgency | undefined) ?? 'notUrgent',
           estimatedDurationMinutes: num(a.estimatedDurationMinutes) ?? null,
           createdBy: 'ai',
         });

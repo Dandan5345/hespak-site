@@ -40,7 +40,7 @@ export function TaskFormModal({ open, onClose, task, defaultCourseId }: Props) {
   const [hasDue, setHasDue] = useState(false);
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('09:00');
-  const [urgency, setUrgency] = useState<Urgency>('not_urgent');
+  const [urgency, setUrgency] = useState<Urgency>('notUrgent');
   const [estimate, setEstimate] = useState('');
   const [error, setError] = useState('');
 
@@ -69,7 +69,7 @@ export function TaskFormModal({ open, onClose, task, defaultCourseId }: Props) {
       setHasDue(false);
       setDueDate('');
       setDueTime('09:00');
-      setUrgency('not_urgent');
+      setUrgency('notUrgent');
       setEstimate('');
     }
     setError('');
@@ -272,7 +272,7 @@ export function TaskFormModal({ open, onClose, task, defaultCourseId }: Props) {
           </div>
 
           {error && (
-            <p className="text-xs font-bold" style={{ color: urgencyMeta('very_urgent').color }}>
+            <p className="text-xs font-bold" style={{ color: urgencyMeta('veryUrgent').color }}>
               {error}
             </p>
           )}

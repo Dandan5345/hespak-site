@@ -44,7 +44,7 @@ export default function Home() {
   const now = useMemo(() => new Date(), []);
   const todayEvents = useMemo(() => eventsOn(scheduleItems, now), [scheduleItems, now]);
   const urgentTasks = useMemo(
-    () => tasks.filter((task) => !task.isCompleted && (task.urgency === 'urgent' || task.urgency === 'very_urgent')).slice(0, 3),
+    () => tasks.filter((task) => !task.isCompleted && (task.urgency === 'urgent' || task.urgency === 'veryUrgent')).slice(0, 3),
     [tasks],
   );
   const totalTasksToday = useMemo(() => tasks.filter((task) => isDueToday(task, now)).length, [tasks, now]);
@@ -430,7 +430,7 @@ function TaskRowCompact({ task, courseColor }: { task: Task; courseColor?: numbe
   const { tokens } = useSfTheme();
   const navigate = useNavigate();
   const dotColor = courseColor ? argbToCss(courseColor) : tokens.accent;
-  const urgencyColor = task.urgency === 'very_urgent' ? '#EF4444' : task.urgency === 'urgent' ? '#F59E0B' : tokens.textFaint;
+  const urgencyColor = task.urgency === 'veryUrgent' ? '#EF4444' : task.urgency === 'urgent' ? '#F59E0B' : tokens.textFaint;
 
   return (
     <button type="button" onClick={() => navigate('/tasks')} className="w-full text-start">

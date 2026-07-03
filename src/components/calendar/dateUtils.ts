@@ -103,7 +103,7 @@ export function roundToNextHalfHour(d: Date): Date {
 const TYPE_COLOR: Record<EventType, string> = {
   exam: '#EF4444',
   submission: '#F59E0B',
-  class: '#6366F1',
+  classLesson: '#6366F1',
   personal: '#10B981',
 };
 
@@ -161,7 +161,7 @@ export function eventTypeKey(t: EventType): string {
       return 'event_type_exam';
     case 'submission':
       return 'event_type_submission';
-    case 'class':
+    case 'classLesson':
       return 'event_type_class';
     default:
       return 'event_type_personal';

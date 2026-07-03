@@ -89,7 +89,7 @@ export function colorForScheduleItem(
       return '#EF4444';
     case 'submission':
       return '#F59E0B';
-    case 'class':
+    case 'classLesson':
       return '#6366F1';
     default:
       return '#10B981';
@@ -107,7 +107,7 @@ export const eventTypeKey = (type: ScheduleItem['type']): string => {
       return 'event_type_exam';
     case 'submission':
       return 'event_type_submission';
-    case 'class':
+    case 'classLesson':
       return 'event_type_class';
     default:
       return 'event_type_personal';

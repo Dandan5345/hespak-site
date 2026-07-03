@@ -9,9 +9,9 @@ import { fromDatetimeLocalValue, toDatetimeLocalValue, toLocalIso } from './date
 import { useTt } from './i18n';
 import { Chip, FieldBox, FieldLabel, GhostButton, ModalShell, PrimaryButton, Switch } from './ui';
 
-const TYPES: EventType[] = ['class', 'exam', 'submission', 'personal'];
+const TYPES: EventType[] = ['classLesson', 'exam', 'submission', 'personal'];
 const TYPE_KEY: Record<EventType, string> = {
-  class: 'event_type_class',
+  classLesson: 'event_type_class',
   exam: 'event_type_exam',
   submission: 'event_type_submission',
   personal: 'event_type_personal',
