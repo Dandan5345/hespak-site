@@ -103,6 +103,8 @@ export function DayView({
   const topFor = (d: Date) => (d.getHours() * 60 + d.getMinutes() - startHour * 60) * pxPerMin;
 
   const placed = useMemo(() => layoutDay(timedEvents), [timedEvents]);
+  const emptyStartHour = sameDay(date, now) ? Math.min(21, Math.max(8, now.getHours() + 1)) : 9;
+  const emptyStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), emptyStartHour, 0);
 
   return (
     <div className="flex flex-col">
@@ -133,12 +135,7 @@ export function DayView({
       )}
 
       {dayEvents.length === 0 ? (
-        <div className="mt-7 py-10 text-center">
-          <div className="text-3xl mb-2">🗓️</div>
-          <div className="text-[14px] font-semibold" style={{ color: 'var(--sf-text-dim)' }}>
-            {t('cal_no_events')}
-          </div>
-        </div>
+        <EmptyDay date={date} onAdd={() => onSlotClick(emptyStart)} />
       ) : (
         <div className="flex px-[18px]" style={{ height: totalHeight }}>
           <div className="relative shrink-0" style={{ width: GUTTER }}>
@@ -205,6 +202,60 @@ export function DayView({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function EmptyDay({ date, onAdd }: { date: Date; onAdd: () => void }) {
+  const { t, lang } = useI18n();
+  const today = new Date();
+  const isToday = sameDay(date, today);
+
+  return (
+    <div className="px-[18px] pt-4">
+      <div
+        className="relative overflow-hidden rounded-[var(--sf-radius)] min-h-[300px] px-5 py-6 flex flex-col items-center justify-center text-center"
+        style={{
+          background: 'var(--sf-surface)',
+          border: 'var(--sf-card-border-width) solid var(--sf-card-border-color)',
+          boxShadow: 'var(--sf-card-shadow)',
+        }}
+      >
+        <div
+          className="absolute inset-x-5 top-6 bottom-6 opacity-70 pointer-events-none"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(to bottom, transparent 0, transparent 47px, var(--sf-accent-soft) 48px, var(--sf-accent-soft) 49px)',
+          }}
+        />
+        <div className="relative flex flex-col items-center">
+          <div className="text-[12px] font-bold mb-2" style={{ color: 'var(--sf-text-faint)' }}>
+            {dayShort(lang, date.getDay())}
+          </div>
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-black mb-4"
+            style={{
+              background: isToday ? 'var(--sf-accent-gradient)' : 'var(--sf-accent-soft)',
+              color: isToday ? 'var(--sf-on-accent)' : 'var(--sf-accent)',
+              boxShadow: isToday ? 'var(--sf-glow)' : undefined,
+            }}
+          >
+            {date.getDate()}
+          </div>
+          <div className="text-[15px] font-extrabold" style={{ color: 'var(--sf-text)' }}>
+            {t('cal_no_events')}
+          </div>
+          <button
+            type="button"
+            onClick={onAdd}
+            aria-label={t('event_title')}
+            className="mt-5 w-12 h-12 rounded-full flex items-center justify-center text-[28px] font-bold leading-none"
+            style={{ background: 'var(--sf-accent-gradient)', color: 'var(--sf-on-accent)', boxShadow: 'var(--sf-glow)' }}
+          >
+            +
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

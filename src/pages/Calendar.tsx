@@ -34,8 +34,8 @@ export default function Calendar() {
   const [eventModal, setEventModal] = useState<EventModalState | null>(null);
 
   const title = calendarTitle(calView, calDate, lang);
-  const prevGlyph = isRtl ? '›' : '‹';
-  const nextGlyph = isRtl ? '‹' : '›';
+  const prevGlyph = '‹';
+  const nextGlyph = '›';
 
   function step(dir: 1 | -1) {
     setCalDate((d) => {
@@ -71,22 +71,24 @@ export default function Calendar() {
   }
 
   return (
-    <div className="pb-6">
-      <div className="flex items-center justify-between gap-2 mb-4">
+    <div className="pb-6 max-w-[560px] mx-auto">
+      <div className="flex items-center justify-between gap-2 mb-4" dir="ltr">
         <button
           type="button"
           onClick={() => step(-1)}
-          aria-label={t('back')}
+          aria-label={isRtl ? 'הקודם' : 'Previous'}
           className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-lg font-bold"
           style={{ background: 'var(--sf-surface)', border: 'var(--sf-card-border-width) solid var(--sf-card-border-color)' }}
         >
           {prevGlyph}
         </button>
-        <h1 className="text-lg sm:text-xl font-extrabold text-center flex-1 truncate">{title}</h1>
+        <h1 className="text-lg sm:text-xl font-extrabold text-center flex-1 truncate" dir={isRtl ? 'rtl' : 'ltr'}>
+          {title}
+        </h1>
         <button
           type="button"
           onClick={() => step(1)}
-          aria-label={t('back')}
+          aria-label={isRtl ? 'הבא' : 'Next'}
           className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-lg font-bold"
           style={{ background: 'var(--sf-surface)', border: 'var(--sf-card-border-width) solid var(--sf-card-border-color)' }}
         >
