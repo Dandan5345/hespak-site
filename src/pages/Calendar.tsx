@@ -123,7 +123,15 @@ export default function Calendar() {
       </div>
 
       {calView === 'day' && (
-        <DayView date={calDate} items={scheduleItems} tasks={tasks} courses={courses} onSlotClick={openNewEvent} onEventClick={openEditEvent} />
+        <DayView
+          date={calDate}
+          items={scheduleItems}
+          tasks={tasks}
+          courses={courses}
+          onSlotClick={openNewEvent}
+          onEventClick={openEditEvent}
+          onDatePick={(d) => setCalDate(startOfDay(d))}
+        />
       )}
       {calView === 'week' && (
         <WeekView date={calDate} items={scheduleItems} tasks={tasks} courses={courses} onDayClick={openDay} onEventClick={openEditEvent} />

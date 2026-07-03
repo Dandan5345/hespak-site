@@ -10,7 +10,7 @@ export function YearView({ date, items, onMonthClick }: { date: Date; items: Sch
   const year = date.getFullYear();
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+    <div className="grid grid-cols-3 gap-2.5">
       {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
         const count = eventCountInMonth(year, m, items);
         const isCurrent = today.getFullYear() === year && today.getMonth() + 1 === m;

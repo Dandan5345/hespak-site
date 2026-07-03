@@ -110,6 +110,7 @@ const TYPE_COLOR: Record<EventType, string> = {
 /** An event's display color: its linked task's course color if any, else a
  * fixed color by type. Mirrors `colorForScheduleItem` in app_controller.dart. */
 export function colorForScheduleItem(item: ScheduleItem, tasks: Task[], courses: Course[]): string {
+  if (item.createdBy === 'device' && typeof item.calendarColor === 'number') return argbToCss(item.calendarColor);
   const task = item.taskId ? tasks.find((t) => t.id === item.taskId) : undefined;
   const course = task?.courseId ? courses.find((c) => c.id === task.courseId) : undefined;
   if (course) return argbToCss(course.color);

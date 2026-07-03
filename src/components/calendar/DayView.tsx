@@ -5,10 +5,10 @@
 import { useMemo } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { Course, ScheduleItem, Task } from '../../state/types';
-import { colorForScheduleItem, durationMinutes, eventsOn, hhmm, sameDay } from './dateUtils';
+import { addDays, colorForScheduleItem, dayShort, durationMinutes, eventsOn, hhmm, sameDay, sundayOf } from './dateUtils';
 import { useTt } from './i18n';
 
-const PX_PER_HOUR = 56;
+const PX_PER_HOUR = 64;
 const GUTTER = 46;
 
 interface Placed {
@@ -68,6 +68,7 @@ export function DayView({
   courses,
   onSlotClick,
   onEventClick,
+  onDatePick,
 }: {
   date: Date;
   items: ScheduleItem[];
@@ -75,6 +76,7 @@ export function DayView({
   courses: Course[];
   onSlotClick: (start: Date) => void;
   onEventClick: (item: ScheduleItem) => void;
+  onDatePick: (date: Date) => void;
 }) {
   const { t } = useI18n();
   const tt = useTt();
@@ -103,13 +105,16 @@ export function DayView({
   const placed = useMemo(() => layoutDay(timedEvents), [timedEvents]);
 
   return (
-    <div>
+    <div className="flex flex-col">
+      <WeekStrip date={date} items={items} tasks={tasks} courses={courses} onPick={onDatePick} />
+      <div className="h-1.5" />
       {allDayEvents.length > 0 && (
-        <div className="mb-3">
-          <div className="text-[12px] font-bold mb-1.5" style={{ color: 'var(--sf-text-faint)' }}>
-            {tt('cal_all_day_section')}
-          </div>
-          <div className="flex flex-col gap-1.5">
+        <div className="mb-2 flex items-start">
+          <div className="shrink-0" style={{ width: GUTTER }} />
+          <div className="ms-2 flex-1 min-w-0">
+            <div className="text-[12px] font-bold mb-1.5" style={{ color: 'var(--sf-text-faint)' }}>
+              {tt('cal_all_day_section')}
+            </div>
             {allDayEvents.map((e) => {
               const color = colorForScheduleItem(e, tasks, courses);
               return (
@@ -128,14 +133,14 @@ export function DayView({
       )}
 
       {dayEvents.length === 0 ? (
-        <div className="mt-6 py-10 text-center">
+        <div className="mt-7 py-10 text-center">
           <div className="text-3xl mb-2">🗓️</div>
           <div className="text-[14px] font-semibold" style={{ color: 'var(--sf-text-dim)' }}>
             {t('cal_no_events')}
           </div>
         </div>
       ) : (
-        <div className="flex" style={{ height: totalHeight }}>
+        <div className="flex px-[18px]" style={{ height: totalHeight }}>
           <div className="relative shrink-0" style={{ width: GUTTER }}>
             {hours.map((h) => (
               <div
@@ -200,6 +205,64 @@ export function DayView({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function WeekStrip({
+  date,
+  items,
+  tasks,
+  courses,
+  onPick,
+}: {
+  date: Date;
+  items: ScheduleItem[];
+  tasks: Task[];
+  courses: Course[];
+  onPick: (date: Date) => void;
+}) {
+  const { lang } = useI18n();
+  const today = new Date();
+  const sun = sundayOf(date);
+
+  return (
+    <div className="px-3.5">
+      <div className="grid grid-cols-7">
+        {Array.from({ length: 7 }, (_, i) => {
+          const d = addDays(sun, i);
+          const selected = sameDay(d, date);
+          const isToday = sameDay(d, today);
+          const dots = eventsOn(d, items).slice(0, 3);
+          return (
+            <button key={i} type="button" onClick={() => onPick(d)} className="min-w-0 py-1 flex flex-col items-center">
+              <span className="text-[11px] font-bold" style={{ color: 'var(--sf-text-faint)' }}>
+                {dayShort(lang, i)}
+              </span>
+              <span
+                className="mt-1.5 w-9 h-9 rounded-full flex items-center justify-center text-[14px] font-extrabold"
+                style={{
+                  background: selected ? 'var(--sf-accent-gradient)' : 'transparent',
+                  color: selected ? 'var(--sf-on-accent)' : 'var(--sf-text)',
+                  border: !selected && isToday ? '1.6px solid var(--sf-accent)' : '1.6px solid transparent',
+                  boxShadow: selected ? 'var(--sf-glow)' : undefined,
+                }}
+              >
+                {d.getDate()}
+              </span>
+              <span className="mt-1.5 h-1.5 flex items-center justify-center gap-px">
+                {dots.map((e) => (
+                  <span
+                    key={e.id}
+                    className="w-[5px] h-[5px] rounded-full"
+                    style={{ background: colorForScheduleItem(e, tasks, courses) }}
+                  />
+                ))}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

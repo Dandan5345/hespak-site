@@ -60,6 +60,7 @@ export interface ScheduleItem {
   isCompleted: boolean;
   externalEventId?: string | null;
   calendarId?: string | null;
+  calendarColor?: number | null;
   createdBy: CreatedBy;
   createdAt: string;
   updatedAt: string;

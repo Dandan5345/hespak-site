@@ -124,6 +124,7 @@ function normalizeScheduleItem(s: Record<string, unknown>): ScheduleItem {
     isCompleted: Boolean(s.isCompleted),
     externalEventId: typeof s.externalEventId === 'string' ? s.externalEventId : null,
     calendarId: typeof s.calendarId === 'string' ? s.calendarId : null,
+    calendarColor: typeof s.calendarColor === 'number' ? s.calendarColor : null,
     createdBy: (s.createdBy as CreatedBy) ?? 'user',
     createdAt: String(s.createdAt ?? new Date().toISOString()),
     updatedAt: String(s.updatedAt ?? new Date().toISOString()),
