@@ -10,14 +10,15 @@
     // the original path so React Router can restore the correct view.
     (function() {
       var repo = '/hespak-site';
-      var full = location.pathname + location.search + location.hash;
-      // Strip the repo prefix to get the app-relative path, then store it
+      // Store pathname only (no search/hash — those are on the redirected URL)
+      var path = location.pathname;
       var appPath = '/';
-      if (full.indexOf(repo + '/') === 0) {
-        appPath = full.slice(repo.length) || '/';
+      if (path.indexOf(repo + '/') === 0) {
+        appPath = path.slice(repo.length) || '/';
       }
       sessionStorage.setItem('sf_redirect', appPath);
-      location.replace(repo + '/');
+      // Carry query + hash through to the SPA entry
+      location.replace(repo + '/' + location.search + location.hash);
     })();
   </script>
 </head>

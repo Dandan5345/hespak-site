@@ -18,14 +18,11 @@
     <div id="root"></div>
     <script>
       // Restore SPA route after a GitHub Pages 404 → redirect cycle.
-      // sessionStorage.sf_redirect holds the app-relative path (e.g. "/calendar").
       (function() {
         var p = sessionStorage.getItem('sf_redirect');
         if (p && p !== '/') {
           sessionStorage.removeItem('sf_redirect');
-          // Build the full URL: current origin + base path + app path + search
-          var pathname = location.pathname.replace(/\/+$/, '') + p;
-          history.replaceState(null, '', pathname + location.search);
+          history.replaceState(null, '', location.pathname.replace(/\/+$/, '') + p + location.search + location.hash);
         }
       })();
     </script>
