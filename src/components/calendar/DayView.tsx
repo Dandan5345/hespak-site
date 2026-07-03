@@ -86,16 +86,8 @@ export function DayView({
   const now = new Date();
   const isToday = sameDay(date, now);
 
-  let startHour = 7;
-  let endHour = 22;
-  for (const e of timedEvents) {
-    const s = new Date(e.startDateTime);
-    const en = new Date(e.endDateTime);
-    startHour = Math.min(startHour, s.getHours());
-    const endH = en.getMinutes() > 0 ? en.getHours() + 1 : en.getHours();
-    endHour = Math.max(endHour, endH);
-  }
-  endHour = Math.min(24, Math.max(startHour + 1, endHour));
+  const startHour = 0;
+  const endHour = 24;
   const hours: number[] = [];
   for (let h = startHour; h < endHour; h++) hours.push(h);
   const totalHeight = (endHour - startHour) * PX_PER_HOUR;
@@ -134,9 +126,8 @@ export function DayView({
         </div>
       )}
 
-      {dayEvents.length === 0 ? (
-        <EmptyDay date={date} onAdd={() => onSlotClick(emptyStart)} />
-      ) : (
+      {dayEvents.length === 0 && <EmptyDay date={date} onAdd={() => onSlotClick(emptyStart)} />}
+      <div className={dayEvents.length === 0 ? 'mt-4' : ''}>
         <div className="flex px-[18px]" style={{ height: totalHeight }}>
           <div className="relative shrink-0" style={{ width: GUTTER }}>
             {hours.map((h) => (
@@ -201,7 +192,7 @@ export function DayView({
             })}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -34,8 +34,8 @@ export default function Calendar() {
   const [eventModal, setEventModal] = useState<EventModalState | null>(null);
 
   const title = calendarTitle(calView, calDate, lang);
-  const prevGlyph = '‹';
-  const nextGlyph = '›';
+  const prevGlyph = '←';
+  const nextGlyph = '→';
 
   function step(dir: 1 | -1) {
     setCalDate((d) => {
