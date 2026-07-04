@@ -67,7 +67,7 @@ export function ChatBubble({ message, tokens, onApprove, onReject, onUndo, onGoF
   const mine = message.fromUser;
 
   return (
-    <div className={`flex mb-3 ${mine ? 'justify-end' : 'justify-start items-end gap-2'}`}>
+    <div className={`flex mb-3 sf-bubble-in ${mine ? 'justify-end' : 'justify-start items-end gap-2'}`}>
       {!mine && <AgentAvatar size={30} tokens={tokens} />}
       <div className="flex flex-col" style={{ maxWidth: '76%', alignItems: mine ? 'flex-end' : 'flex-start' }}>
         <div

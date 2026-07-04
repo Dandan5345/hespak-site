@@ -39,6 +39,23 @@ function hasRealConversation(messages: CloudChatMessage[]): boolean {
   return messages.some((m) => m.fromUser && m.text.trim().length > 0);
 }
 
+/** Compare two conversations by their (sender, text) sequence — robust to
+ * Firestore reordering map keys (it returns maps sorted alphabetically, so a
+ * raw JSON compare of tokenUsage always mismatches). Mirrors the app's
+ * _sameChatThread. */
+function sameThread(a: CloudChatMessage[], b: CloudChatMessage[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].fromUser !== b[i].fromUser || a[i].text !== b[i].text) return false;
+  }
+  return true;
+}
+
+/** Hard cap on the conversation memory kept per chat: the model always sees
+ * the full history up to ~16K estimated tokens; past that the user is asked to
+ * start a new chat (the old one stays in the history). */
+export const CONTEXT_TOKEN_LIMIT = 16000;
+
 const REASONING_KEY = 'sf_reasoning';
 const VALID_EFFORTS: ReasoningEffort[] = ['minimal', 'medium', 'high', 'cheap'];
 
@@ -103,6 +120,12 @@ export function useChatEngine() {
 
   const [messages, setMessages] = useState<LocalChatMessage[]>([]);
   const [typing, setTyping] = useState(false);
+  // Short "loading X instructions…" line under the typing dots, mirroring the
+  // app's chatTypingStatus.
+  const [typingStatus, setTypingStatus] = useState<string | null>(null);
+  // Estimated tokens of the conversation history the model sees (system
+  // instructions excluded). Drives the 16K memory meter + full-memory gate.
+  const [contextTokens, setContextTokens] = useState(0);
   // While the agent is *writing* (not thinking), the reply is revealed a few
   // characters at a time here — the web analogue of the app's streamingText.
   const [streamingText, setStreamingText] = useState<string | null>(null);
@@ -129,6 +152,15 @@ export function useChatEngine() {
   const messagesRef = useRef<LocalChatMessage[]>([]);
   const revealTimerRef = useRef<number | null>(null);
 
+  // Single write-path for the model context: keeps the ref and the estimated
+  // token counter in sync so the 16K memory gate is always accurate.
+  const setAiContext = useCallback((turns: ChatTurn[]) => {
+    aiContextRef.current = turns;
+    let total = 0;
+    for (const turn of turns) total += estimateTokens(turn.content);
+    setContextTokens(total);
+  }, []);
+
   // Stop any in-progress character reveal and drop the partial bubble.
   const clearReveal = useCallback(() => {
     if (revealTimerRef.current != null) {
@@ -143,7 +175,6 @@ export function useChatEngine() {
   const startFresh = useCallback(() => {
     clearReveal();
     const greeting = greetingText();
-    aiContextRef.current = [];
     loadedPacksRef.current = new Set();
     entitiesNeededRef.current = false;
     entityContextReadTrackedRef.current = false;
@@ -153,7 +184,7 @@ export function useChatEngine() {
     promptReadBreakdownRef.current = {};
     pendingRef.current = new Map();
     setOutOfCredits(false);
-    aiContextRef.current = [{ role: 'assistant', content: greeting }];
+    setAiContext([{ role: 'assistant', content: greeting }]);
     setMessages([
       {
         id: genId(),
@@ -162,7 +193,7 @@ export function useChatEngine() {
         quickReplies: [t('chat_btn_schedule'), t('chat_btn_task')],
       },
     ]);
-  }, [greetingText, t, clearReveal]);
+  }, [greetingText, t, clearReveal, setAiContext]);
 
   // Restore a synced conversation (from a reload or the mobile app) into the
   // live UI + model context. Mirrors the app's restoreSession: the model context
@@ -178,7 +209,7 @@ export function useChatEngine() {
     promptReadBreakdownRef.current = {};
     pendingRef.current = new Map();
     setOutOfCredits(false);
-    aiContextRef.current = stored.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text }));
+    setAiContext(stored.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })));
     setMessages(
       stored.map((m) => ({
         id: genId(),
@@ -188,7 +219,7 @@ export function useChatEngine() {
         tokenUsage: m.tokenUsage ?? null,
       })),
     );
-  }, [clearReveal]);
+  }, [clearReveal, setAiContext]);
 
   // First mount: wait for the cloud snapshot, then either restore the synced
   // conversation or open with a local greeting — no model call either way.
@@ -222,13 +253,16 @@ export function useChatEngine() {
     // Don't adopt a remote snapshot while thinking or mid-reveal on this device.
     if (!hydratedRef.current || typing || revealTimerRef.current != null) return;
     const remote = cloudChatRemote;
-    if (JSON.stringify(remote) === JSON.stringify(toCloudChat(messagesRef.current))) return;
+    // A cleared/greeting-only remote thread shouldn't wipe the local one
+    // (mirrors the app's _applyCloudChatRealtime guard).
+    if (!hasRealConversation(remote)) return;
+    // Our own write echoing back must be a no-op: a restore here would reset
+    // the loaded-packs / prompt-read tracking and re-charge the instruction
+    // tokens on every turn. Compare (sender, text) — not raw JSON, because
+    // Firestore returns tokenUsage maps with re-sorted keys.
+    if (sameThread(remote, toCloudChat(messagesRef.current))) return;
     suppressSaveRef.current = true;
-    if (hasRealConversation(remote)) {
-      restoreFromCloud(remote);
-    } else {
-      startFresh();
-    }
+    restoreFromCloud(remote);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudChatRev]);
 
@@ -261,28 +295,57 @@ export function useChatEngine() {
     [t],
   );
 
-  const addPromptReadContext = useCallback((description: string, text: string) => {
+  const promptStatus = useCallback(
+    (pack: ChatPromptPack) => {
+      switch (pack) {
+        case 'actionProtocol':
+          return t('chat_status_prompt_action');
+        case 'tasks':
+          return t('chat_status_prompt_tasks');
+        case 'courses':
+          return t('chat_status_prompt_courses');
+        case 'schedule':
+          return t('chat_status_prompt_schedule');
+        case 'focus':
+          return t('chat_status_prompt_focus');
+        case 'smartNotifications':
+          return t('chat_status_prompt_smart_notifications');
+        case 'identity':
+          return t('chat_status_prompt_identity');
+        case 'memory':
+          return t('chat_status_prompt_memory');
+      }
+    },
+    [t],
+  );
+
+  const addPromptReadContext = useCallback((description: string, text: string, status?: string) => {
     const tokens = estimateTokens(text);
     if (tokens <= 0) return;
     promptReadTokensRef.current += tokens;
     promptReadDescriptionsRef.current.push(description);
     promptReadBreakdownRef.current[description] = (promptReadBreakdownRef.current[description] ?? 0) + tokens;
+    if (status) setTypingStatus(status);
   }, []);
 
   const includeEntityContextForPromptRead = useCallback(() => {
     entitiesNeededRef.current = true;
     if (entityContextReadTrackedRef.current) return;
     entityContextReadTrackedRef.current = true;
-    addPromptReadContext(t('chat_prompt_read_app_data'), buildEntitiesContext(data.courses, data.tasks, data.smartReminders));
+    addPromptReadContext(
+      t('chat_prompt_read_app_data'),
+      buildEntitiesContext(data.courses, data.tasks, data.smartReminders),
+      t('chat_status_prompt_app_data'),
+    );
   }, [addPromptReadContext, data.courses, data.smartReminders, data.tasks, t]);
 
   const addLoadedPack = useCallback(
     (pack: ChatPromptPack) => {
       if (loadedPacksRef.current.has(pack)) return;
       loadedPacksRef.current.add(pack);
-      addPromptReadContext(promptReadDescription(pack), promptPackInstruction(pack));
+      addPromptReadContext(promptReadDescription(pack), promptPackInstruction(pack), promptStatus(pack));
     },
-    [addPromptReadContext, promptReadDescription],
+    [addPromptReadContext, promptReadDescription, promptStatus],
   );
 
   const pushAiMessage = useCallback((text: string, opts: { tokenUsage?: ChatTokenUsage; pendingActions?: Record<string, unknown>[]; focusMinutes?: number | null } = {}) => {
@@ -406,7 +469,7 @@ export function useChatEngine() {
             const today = new Date().toISOString().slice(0, 10);
             const sysPrompt = systemPrompt(today, data.agentName);
             const memory = data.agentMemory.trim() ? `[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}` : '';
-            addPromptReadContext(t('chat_prompt_read_system'), memory ? `${sysPrompt}\n${memory}` : sysPrompt);
+            addPromptReadContext(t('chat_prompt_read_system'), memory ? `${sysPrompt}\n${memory}` : sysPrompt, t('chat_status_prompt_system'));
           }
           const visiblePromptReadTokens = promptReadTokensRef.current;
           const visiblePromptReadDescriptions = [...promptReadDescriptionsRef.current];
@@ -434,7 +497,8 @@ export function useChatEngine() {
               )
             : undefined;
           const replyText = result.text;
-          aiContextRef.current = [...aiContextRef.current, { role: 'assistant', content: replyText }];
+          setTypingStatus(null);
+          setAiContext([...aiContextRef.current, { role: 'assistant', content: replyText }]);
 
           const parsed = extractJson(replyText);
 
@@ -442,8 +506,8 @@ export function useChatEngine() {
           if (parsed && parsed.tool === 'get_schedule' && round < MAX_TOOL_ROUNDS) {
             const lookup = scheduleForDate(typeof parsed.date === 'string' ? parsed.date : undefined, data.scheduleItems);
             const encoded = JSON.stringify(lookup);
-            addPromptReadContext(t('chat_prompt_read_schedule_result'), encoded);
-            aiContextRef.current = [...aiContextRef.current, { role: 'user', content: encoded }];
+            addPromptReadContext(t('chat_prompt_read_schedule_result'), encoded, t('chat_status_prompt_schedule_result'));
+            setAiContext([...aiContextRef.current, { role: 'user', content: encoded }]);
             continue;
           }
 
@@ -487,21 +551,53 @@ export function useChatEngine() {
         }
       } finally {
         setTyping(false);
+        setTypingStatus(null);
       }
     },
-    [addPromptReadContext, applyHistoryDiscount, buildMessages, data, displayName, idToken, pushAiMessage, revealReply, t, tt],
+    [addPromptReadContext, applyHistoryDiscount, buildMessages, data, displayName, idToken, pushAiMessage, revealReply, setAiContext, t, tt],
   );
+
+  const memoryFull = contextTokens >= CONTEXT_TOKEN_LIMIT;
 
   const sendText = useCallback(
     (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || typing) return;
+      if (!trimmed || typing || memoryFull) return;
       ensureLazyPacks(trimmed);
       setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: trimmed, inputTokens: estimateTokens(trimmed) }]);
-      aiContextRef.current = [...aiContextRef.current, { role: 'user', content: trimmed }];
+      setAiContext([...aiContextRef.current, { role: 'user', content: trimmed }]);
       void runAiLoop(effort);
     },
-    [typing, ensureLazyPacks, runAiLoop, effort],
+    [typing, memoryFull, ensureLazyPacks, runAiLoop, effort, setAiContext],
+  );
+
+  // Attach existing tasks for the AI to weave into the schedule — the web
+  // analogue of the app's attachTasksToChat (📎 button).
+  const attachTasks = useCallback(
+    (ids: string[]) => {
+      if (typing || memoryFull || ids.length === 0) return;
+      const picked = data.tasks.filter((task) => ids.includes(task.id));
+      if (picked.length === 0) return;
+      addLoadedPack('actionProtocol');
+      addLoadedPack('schedule');
+      includeEntityContextForPromptRead();
+      const payload = picked.map((task) => ({
+        id: task.id,
+        title: task.title,
+        courseId: task.courseId ?? null,
+        urgency: task.urgency,
+        estimatedDurationMinutes: task.estimatedDurationMinutes ?? null,
+        dueDateTime: task.dueDateTime ?? null,
+      }));
+      const modelText = `${t('chat_attached_tasks')}: ${JSON.stringify(payload)}. קשר אותן ללו"ז אם רלוונטי.`;
+      setMessages((prev) => [
+        ...prev,
+        { id: genId(), fromUser: true, text: `${t('chat_attached_tasks')} (${picked.length})`, inputTokens: estimateTokens(modelText) },
+      ]);
+      setAiContext([...aiContextRef.current, { role: 'user', content: modelText }]);
+      void runAiLoop(effort);
+    },
+    [typing, memoryFull, data.tasks, addLoadedPack, includeEntityContextForPromptRead, t, setAiContext, runAiLoop, effort],
   );
 
   const confirmPending = useCallback(
@@ -516,13 +612,13 @@ export function useChatEngine() {
       undoSnapshotsRef.current.set(undoKey, snapshot);
       entityContextReadTrackedRef.current = false;
       includeEntityContextForPromptRead();
-      aiContextRef.current = [...aiContextRef.current, { role: 'assistant', content: summary }];
+      setAiContext([...aiContextRef.current, { role: 'assistant', content: summary }]);
       setMessages((prev) => [
         ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'approved' as const } } : m)),
         { id: genId(), fromUser: false, text: summary, undoKey },
       ]);
     },
-    [data, includeEntityContextForPromptRead, t],
+    [data, includeEntityContextForPromptRead, setAiContext, t],
   );
 
   const undoChange = useCallback(
@@ -532,14 +628,14 @@ export function useChatEngine() {
       undoSnapshotsRef.current.delete(undoKey);
       data.restoreState(snapshot);
       const text = t('chat_change_undone');
-      aiContextRef.current = [...aiContextRef.current, { role: 'assistant', content: text }];
+      setAiContext([...aiContextRef.current, { role: 'assistant', content: text }]);
       setMessages((prev) => [
         // Drop the undo affordance from the confirmation bubble, then confirm.
         ...prev.map((m) => (m.undoKey === undoKey ? { ...m, undoKey: undefined } : m)),
         { id: genId(), fromUser: false, text },
       ]);
     },
-    [data, t],
+    [data, setAiContext, t],
   );
 
   const rejectPending = useCallback((id: string) => {
@@ -547,12 +643,12 @@ export function useChatEngine() {
     if (!entry || entry.resolved !== 'pending') return;
     entry.resolved = 'rejected';
     const text = t('chat_change_rejected_followup');
-    aiContextRef.current = [...aiContextRef.current, { role: 'assistant', content: text }];
+    setAiContext([...aiContextRef.current, { role: 'assistant', content: text }]);
     setMessages((prev) => [
       ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'rejected' as const } } : m)),
       { id: genId(), fromUser: false, text },
     ]);
-  }, [t]);
+  }, [setAiContext, t]);
 
   // Archive the current conversation as a session (newest first, capped) if it
   // has real content. Returns the resulting sessions list.
@@ -619,10 +715,12 @@ export function useChatEngine() {
     () => ({
       messages,
       typing,
+      typingStatus,
       streamingText,
       effort,
       setEffort,
       sendText,
+      attachTasks,
       confirmPending,
       rejectPending,
       undoChange,
@@ -633,8 +731,11 @@ export function useChatEngine() {
       agentDisplayName,
       quotaRemaining,
       noCredits,
+      contextTokens,
+      contextLimit: CONTEXT_TOKEN_LIMIT,
+      memoryFull,
       tt,
     }),
-    [messages, typing, streamingText, effort, setEffort, sendText, confirmPending, rejectPending, undoChange, newChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, tt],
+    [messages, typing, typingStatus, streamingText, effort, setEffort, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, memoryFull, tt],
   );
 }

@@ -8,6 +8,9 @@ import { ChatBubble } from '../components/chat/ChatBubble';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
 import { ReasoningSheet } from '../components/chat/ReasoningSheet';
 import { AgentAvatar } from '../components/chat/AgentAvatar';
+import { BottomSheet } from '../components/chat/BottomSheet';
+import { TaskPickerSheet } from '../components/chat/TaskPickerSheet';
+import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TrashIcon } from '../components/chat/icons';
 import { reasoningEmoji } from '../state/types';
 
 const REASONING_LABEL_KEY = { minimal: 'reasoning_minimal', medium: 'reasoning_medium', high: 'reasoning_high', cheap: 'reasoning_cheap' } as const;
@@ -26,12 +29,16 @@ export default function Chat() {
   const { agentName, setAgentName } = useData();
   const navigate = useNavigate();
 
-  const { messages, typing, streamingText, effort, setEffort, sendText, confirmPending, rejectPending, undoChange, newChat, sessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, tt } =
-    useChatEngine();
+  const {
+    messages, typing, typingStatus, streamingText, effort, setEffort, sendText, attachTasks,
+    confirmPending, rejectPending, undoChange, newChat, sessions, restoreSession, deleteSession,
+    agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt,
+  } = useChatEngine();
 
   const [input, setInput] = useState('');
   const [showEffortSheet, setShowEffortSheet] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTaskPicker, setShowTaskPicker] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
@@ -43,7 +50,7 @@ export default function Chat() {
   }, [messages.length, typing, streamingText]);
 
   const handleSend = () => {
-    if (!input.trim() || typing || noCredits) return;
+    if (!input.trim() || typing || noCredits || memoryFull) return;
     sendText(input);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -65,60 +72,89 @@ export default function Chat() {
     setRenaming(false);
   };
 
+  // Conversation-memory meter (16K limit): green→amber→red as it fills up.
+  const memPct = Math.min(100, Math.round((contextTokens / contextLimit) * 100));
+  const memNear = !memoryFull && memPct >= 90;
+  const memColor = memoryFull ? '#EF4444' : memPct >= 85 ? '#F59E0B' : tokens.accent;
+
+  const iconBtn = {
+    background: tokens.surface,
+    border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}`,
+    color: tokens.text,
+  } as const;
+
   return (
     <div className="flex flex-col" style={{ height: 'calc(100dvh - 8.5rem)', minHeight: 420 }}>
       {/* header */}
       <div
-        className="flex items-center gap-3 px-3 py-3 rounded-t-[var(--sf-radius-lg)]"
+        className="rounded-t-[var(--sf-radius-lg)] overflow-hidden"
         style={{ background: 'var(--sf-nav-bg)', border: `var(--sf-nav-border-width) solid var(--sf-nav-border-color)`, borderBottom: 'none' }}
       >
-        <AgentAvatar size={42} tokens={tokens} />
-        <div className="flex-1 min-w-0">
-          <button onClick={openRename} className="flex items-center gap-1.5 max-w-full" style={{ color: tokens.text }}>
-            <span className="font-extrabold text-[15px] truncate">{agentDisplayName}</span>
-            <span className="text-xs opacity-60">✎</span>
-          </button>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs font-semibold" style={{ color: typing ? tokens.accent : '#10B981' }}>
-              {typing ? t('chat_today') : t('chat_online')}
-            </span>
-            <span className="text-xs" style={{ color: tokens.textDim }}>
-              · {t('chat_tokens_label')}: {quotaRemaining != null ? fmtTokens(quotaRemaining) : '—'}
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowHistory(true)}
-          title={t('chat_history_title')}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0 relative"
-          style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
-        >
-          🕘
-          {sessions.length > 0 && (
+        <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
+          <div className="relative shrink-0">
+            <AgentAvatar size={42} tokens={tokens} />
+            {/* online dot */}
             <span
-              className="absolute min-w-[16px] h-4 px-1 rounded-full text-[10px] font-black flex items-center justify-center"
-              style={{ top: -4, insetInlineEnd: -4, background: 'var(--sf-accent-gradient)', color: tokens.onAccent }}
-            >
-              {sessions.length}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={newChat}
-          title={t('chat_new')}
-          className="w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0"
-          style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
+              className="absolute w-3 h-3 rounded-full"
+              style={{ bottom: 0, insetInlineEnd: 0, background: typing ? tokens.accent : '#10B981', border: `2px solid ${tokens.bg2}` }}
+            />
+          </div>
+          <div className="flex-1 min-w-0">
+            <button onClick={openRename} className="flex items-center gap-1.5 max-w-full" style={{ color: tokens.text }}>
+              <span className="font-extrabold text-[15px] truncate">{agentDisplayName}</span>
+              <span style={{ color: tokens.textDim }}>
+                <EditIcon size={13} />
+              </span>
+            </button>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs font-semibold" style={{ color: typing ? tokens.accent : '#10B981' }}>
+                {typing ? t('chat_today') : t('chat_online')}
+              </span>
+              <span className="text-xs truncate" style={{ color: tokens.textDim }}>
+                · {t('chat_tokens_label')}: {quotaRemaining != null ? fmtTokens(quotaRemaining) : '—'}
+              </span>
+            </div>
+          </div>
+          <button onClick={newChat} title={t('chat_new')} className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 sf-press" style={iconBtn}>
+            <NewChatIcon />
+          </button>
+          <button
+            onClick={() => setShowHistory(true)}
+            title={t('chat_history_title')}
+            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 relative sf-press"
+            style={{
+              ...iconBtn,
+              background: sessions.length > 0 ? tokens.accentSoft : tokens.surface,
+              color: sessions.length > 0 ? tokens.accent : tokens.text,
+            }}
+          >
+            <HistoryIcon />
+            {sessions.length > 0 && (
+              <span
+                className="absolute min-w-[16px] h-4 px-1 rounded-full text-[10px] font-black flex items-center justify-center"
+                style={{ top: -4, insetInlineEnd: -4, background: 'var(--sf-accent-gradient)', color: tokens.onAccent }}
+              >
+                {sessions.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setShowEffortSheet(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-extrabold shrink-0 sf-press"
+            style={iconBtn}
+          >
+            <span>{reasoningEmoji(effort)}</span>
+            <span className="hidden sm:inline">{t(REASONING_LABEL_KEY[effort])}</span>
+          </button>
+        </div>
+        {/* conversation-memory meter (16K tokens per chat) */}
+        <div
+          className="h-[3px] w-full"
+          title={`${t('chat_memory_label')}: ${fmtTokens(contextTokens)} / ${fmtTokens(contextLimit)}`}
+          style={{ background: tokens.ringTrack }}
         >
-          🆕
-        </button>
-        <button
-          onClick={() => setShowEffortSheet(true)}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-extrabold shrink-0"
-          style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
-        >
-          <span>{reasoningEmoji(effort)}</span>
-          <span className="hidden sm:inline">{t(REASONING_LABEL_KEY[effort])}</span>
-        </button>
+          <div className="h-full transition-all duration-500" style={{ width: `${memPct}%`, background: memColor }} />
+        </div>
       </div>
 
       {/* messages */}
@@ -162,7 +198,7 @@ export default function Chat() {
           />
         )}
         {/* Thinking dots only while waiting for the reply — not while writing. */}
-        {typing && streamingText == null && <TypingIndicator tokens={tokens} />}
+        {typing && streamingText == null && <TypingIndicator tokens={tokens} status={typingStatus} />}
       </div>
 
       {/* composer */}
@@ -170,6 +206,14 @@ export default function Chat() {
         className="p-3 rounded-b-[var(--sf-radius-lg)]"
         style={{ background: 'var(--sf-nav-bg)', border: `var(--sf-nav-border-width) solid var(--sf-nav-border-color)`, borderTop: 'none' }}
       >
+        {memNear && (
+          <div
+            className="mb-2 rounded-[var(--sf-radius-sm)] px-3 py-2 text-xs font-semibold text-center"
+            style={{ background: 'rgba(245, 158, 11, 0.14)', color: '#F59E0B' }}
+          >
+            {t('chat_memory_near')}
+          </div>
+        )}
         {noCredits ? (
           <div
             className="rounded-[var(--sf-radius-sm)] px-4 py-3 text-sm font-semibold text-center"
@@ -177,8 +221,33 @@ export default function Chat() {
           >
             {tt('chat_quota_exhausted_web')}
           </div>
+        ) : memoryFull ? (
+          <div
+            className="rounded-[var(--sf-radius-sm)] px-4 py-3 text-center"
+            style={{ background: tokens.accentSoft }}
+          >
+            <div className="text-sm font-semibold mb-2.5" style={{ color: tokens.text }}>
+              {t('chat_memory_full')}
+            </div>
+            <button
+              onClick={newChat}
+              className="h-10 px-5 rounded-full text-sm font-extrabold sf-press"
+              style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent, boxShadow: tokens.glow !== 'none' ? tokens.glow : undefined }}
+            >
+              {t('chat_memory_new_chat')}
+            </button>
+          </div>
         ) : (
           <div className="flex items-end gap-2">
+            <button
+              onClick={() => setShowTaskPicker(true)}
+              title={t('chat_pick_tasks')}
+              disabled={typing}
+              className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
+              style={iconBtn}
+            >
+              <PaperclipIcon />
+            </button>
             <textarea
               ref={textareaRef}
               value={input}
@@ -197,11 +266,13 @@ export default function Chat() {
             <button
               onClick={handleSend}
               disabled={!input.trim() || typing}
-              className="w-11 h-11 rounded-full flex items-center justify-center text-lg shrink-0 disabled:opacity-50"
+              className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
               style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent, boxShadow: tokens.glow !== 'none' ? tokens.glow : undefined }}
               aria-label={t('chat_placeholder')}
             >
-              ➤
+              <span style={{ transform: dir === 'rtl' ? 'scaleX(-1)' : undefined, display: 'inline-flex' }}>
+                <SendIcon />
+              </span>
             </button>
           </div>
         )}
@@ -209,90 +280,78 @@ export default function Chat() {
 
       {showEffortSheet && <ReasoningSheet tokens={tokens} current={effort} onSelect={setEffort} onClose={() => setShowEffortSheet(false)} />}
 
+      {showTaskPicker && <TaskPickerSheet tokens={tokens} onAttach={attachTasks} onClose={() => setShowTaskPicker(false)} />}
+
       {showHistory && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center" onClick={() => setShowHistory(false)}>
-          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.45)' }} />
-          <div
-            className="relative w-full sm:max-w-sm rounded-t-[28px] sm:rounded-[24px] p-5 pb-8 max-h-[70vh] overflow-y-auto"
-            style={{ background: tokens.bg2, color: tokens.text }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-lg font-extrabold mb-3">{t('chat_history_title')}</h2>
-            {sessions.length === 0 ? (
-              <div className="text-sm py-6 text-center" style={{ color: tokens.textDim }}>
-                {t('chat_history_empty')}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {sessions.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-center gap-2 rounded-[var(--sf-radius-sm)] p-2"
-                    style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
+        <BottomSheet tokens={tokens} onClose={() => setShowHistory(false)}>
+          <h2 className="text-lg font-extrabold mb-3">{t('chat_history_title')}</h2>
+          {sessions.length === 0 ? (
+            <div className="text-sm py-6 text-center" style={{ color: tokens.textDim }}>
+              {t('chat_history_empty')}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {sessions.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center gap-2 rounded-[var(--sf-radius-sm)] p-2"
+                  style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
+                >
+                  <button
+                    onClick={() => {
+                      restoreSession(s.id);
+                      setShowHistory(false);
+                    }}
+                    title={t('chat_history_restore')}
+                    className="flex-1 min-w-0 text-start"
                   >
-                    <button
-                      onClick={() => {
-                        restoreSession(s.id);
-                        setShowHistory(false);
-                      }}
-                      title={t('chat_history_restore')}
-                      className="flex-1 min-w-0 text-start"
-                    >
-                      <div className="text-[14px] font-bold truncate">{s.title || t('chat_new')}</div>
-                      <div className="text-[11px] mt-0.5" style={{ color: tokens.textDim }}>
-                        {new Date(s.createdAt).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US', {
-                          day: 'numeric',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => deleteSession(s.id)}
-                      title={t('chat_history_delete')}
-                      aria-label={t('chat_history_delete')}
-                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm"
-                      style={{ color: tokens.textDim }}
-                    >
-                      🗑
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+                    <div className="text-[14px] font-bold truncate">{s.title || t('chat_new')}</div>
+                    <div className="text-[11px] mt-0.5" style={{ color: tokens.textDim }}>
+                      {new Date(s.createdAt).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => deleteSession(s.id)}
+                    title={t('chat_history_delete')}
+                    aria-label={t('chat_history_delete')}
+                    className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 sf-press"
+                    style={{ color: tokens.textDim }}
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </BottomSheet>
       )}
 
       {renaming && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center" onClick={() => setRenaming(false)}>
-          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.45)' }} />
-          <div
-            className="relative w-full sm:max-w-sm rounded-t-[28px] sm:rounded-[24px] p-5 pb-8"
-            style={{ background: tokens.bg2, color: tokens.text }}
-            onClick={(e) => e.stopPropagation()}
+        <BottomSheet tokens={tokens} onClose={() => setRenaming(false)}>
+          <h2 className="text-lg font-extrabold mb-3">{t('agent_rename_title')}</h2>
+          <input
+            autoFocus
+            dir={dir}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && saveRename()}
+            placeholder={t('agent_rename_hint')}
+            className="w-full rounded-[var(--sf-radius-sm)] px-4 py-2.5 text-[15px] outline-none mb-4"
+            style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}`, color: tokens.text }}
+          />
+          <button
+            onClick={saveRename}
+            className="w-full h-11 rounded-[var(--sf-radius-sm)] font-extrabold sf-press"
+            style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent }}
           >
-            <h2 className="text-lg font-extrabold mb-3">{t('agent_rename_title')}</h2>
-            <input
-              autoFocus
-              dir={dir}
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && saveRename()}
-              placeholder={t('agent_rename_hint')}
-              className="w-full rounded-[var(--sf-radius-sm)] px-4 py-2.5 text-[15px] outline-none mb-4"
-              style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}`, color: tokens.text }}
-            />
-            <button
-              onClick={saveRename}
-              className="w-full h-11 rounded-[var(--sf-radius-sm)] font-extrabold"
-              style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent }}
-            >
-              {t('agent_rename_save')}
-            </button>
-          </div>
-        </div>
+            {t('agent_rename_save')}
+          </button>
+        </BottomSheet>
       )}
     </div>
   );

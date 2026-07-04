@@ -47,10 +47,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               key={item.to}
               to={item.to}
               end={item.to === '/'}
-              className="flex items-center gap-3 rounded-[var(--sf-radius-sm)] px-3 py-2.5 transition-colors font-medium"
+              className="sf-navlink flex items-center gap-3 rounded-[var(--sf-radius-sm)] px-3 py-2.5 transition-colors font-medium"
               style={({ isActive }) => ({
-                background: isActive ? 'var(--sf-accent-soft)' : 'transparent',
+                background: isActive ? 'var(--sf-accent-soft)' : undefined,
                 color: isActive ? tokens.accent : tokens.textDim,
+                fontWeight: isActive ? 700 : undefined,
               })}
             >
               <span className="text-xl">{item.emoji}</span>
@@ -62,7 +63,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex flex-col gap-2">
           <button
             onClick={() => navigate('/chat')}
-            className="flex items-center gap-3 rounded-[var(--sf-radius-sm)] px-3 py-2.5 font-medium"
+            className="flex items-center gap-3 rounded-[var(--sf-radius-sm)] px-3 py-2.5 font-medium sf-press"
             style={{ background: tokens.accentSoft, color: tokens.accent }}
           >
             <span className="text-xl">💬</span>
@@ -112,7 +113,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Floating chat button (mobile) */}
       <button
         onClick={() => navigate('/chat')}
-        className="md:hidden fixed bottom-20 z-40 w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg"
+        className="md:hidden fixed bottom-20 z-40 w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg sf-press"
         style={{
           insetInlineEnd: '1rem',
           background: 'var(--sf-accent-gradient)',

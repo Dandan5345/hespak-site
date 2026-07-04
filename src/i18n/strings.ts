@@ -543,6 +543,16 @@ export const translations: Record<string, Record<string, string>> = {
     'en': 'Instruction/context input chat credits for {item}',
   },
   'chat_tokens_total': { 'he': 'סה״כ קרדיטי שיחה', 'en': 'Total chat credits' },
+  'chat_memory_label': { 'he': 'זיכרון שיחה', 'en': 'Chat memory' },
+  'chat_memory_near': {
+    'he': '⚠️ השיחה מתקרבת לגבול הזיכרון — כדאי לפתוח שיחה חדשה בקרוב.',
+    'en': '⚠️ This chat is nearing its memory limit — consider starting a new chat soon.',
+  },
+  'chat_memory_full': {
+    'he': '🧠 זיכרון השיחה מלא (16,000 טוקנים). כדי להמשיך, פתחו שיחה חדשה — השיחה הנוכחית תישמר בהיסטוריה.',
+    'en': '🧠 This chat\'s memory is full (16,000 tokens). Start a new chat to continue — this one is saved in your history.',
+  },
+  'chat_memory_new_chat': { 'he': '✨ התחל שיחה חדשה', 'en': '✨ Start a new chat' },
   'chat_history_title': { 'he': '📝 היסטוריית שיחות', 'en': '📝 Chat history' },
   'chat_history_empty': { 'he': 'אין שיחות שמורות', 'en': 'No saved chats' },
   'chat_history_restore': { 'he': 'פתח שיחה', 'en': 'Open chat' },
