@@ -9,7 +9,25 @@ import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText } from './keywordInten
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
+import { useCloudChat, type CloudChatMessage } from './useCloudChat';
 import type { LocalChatMessage } from './types';
+
+/** Project the live UI messages down to the portable shape stored in Firestore
+ * (and shared with the mobile app). UI-only state is dropped. */
+function toCloudChat(messages: LocalChatMessage[]): CloudChatMessage[] {
+  return messages.map((m) => ({
+    fromUser: m.fromUser,
+    text: m.text,
+    inputTokens: m.inputTokens ?? null,
+    tokenUsage: m.tokenUsage ?? null,
+  }));
+}
+
+/** A synced conversation is worth restoring only once the user has actually
+ * said something — a lone greeting is treated as an empty/fresh chat. */
+function hasRealConversation(messages: CloudChatMessage[]): boolean {
+  return messages.some((m) => m.fromUser && m.text.trim().length > 0);
+}
 
 const REASONING_KEY = 'sf_reasoning';
 const VALID_EFFORTS: ReasoningEffort[] = ['minimal', 'medium', 'high', 'cheap'];
@@ -61,6 +79,13 @@ export function useChatEngine() {
   const tt = useCallback((k: string) => EXTRA[k]?.[lang] ?? t(k), [lang, t]);
   const { displayName, idToken } = useAuth();
   const data = useData();
+  const {
+    loaded: cloudChatLoaded,
+    remoteMessages: cloudChatRemote,
+    remoteRev: cloudChatRev,
+    save: saveCloudChat,
+    clear: clearCloudChat,
+  } = useCloudChat();
 
   const agentDisplayName = data.agentName.trim() || t('agent_default_name');
 
@@ -78,7 +103,12 @@ export function useChatEngine() {
   const promptReadDescriptionsRef = useRef<string[]>([]);
   const promptReadBreakdownRef = useRef<Record<string, number>>({});
   const pendingRef = useRef<Map<string, PendingEntry>>(new Map());
-  const greetedRef = useRef(false);
+  const hydratedRef = useRef(false);
+  // Set right before we replace local messages with a remote snapshot, so the
+  // save-on-change effect doesn't immediately echo that snapshot back.
+  const suppressSaveRef = useRef(false);
+  // Mirror of `messages` for use inside effects without re-subscribing them.
+  const messagesRef = useRef<LocalChatMessage[]>([]);
 
   const greetingText = useCallback(() => t('chat_greeting').replace('{name}', agentDisplayName), [t, agentDisplayName]);
 
@@ -105,13 +135,71 @@ export function useChatEngine() {
     ]);
   }, [greetingText, t]);
 
-  // Local opening greeting on first mount — no model call.
-  useEffect(() => {
-    if (greetedRef.current) return;
-    greetedRef.current = true;
-    startFresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Restore a synced conversation (from a reload or the mobile app) into the
+  // live UI + model context. Mirrors the app's restoreSession: the model context
+  // is rebuilt from the visible turns only.
+  const restoreFromCloud = useCallback((stored: CloudChatMessage[]) => {
+    loadedPacksRef.current = new Set();
+    entitiesNeededRef.current = false;
+    entityContextReadTrackedRef.current = false;
+    systemPromptTokensTrackedRef.current = false;
+    promptReadTokensRef.current = 0;
+    promptReadDescriptionsRef.current = [];
+    promptReadBreakdownRef.current = {};
+    pendingRef.current = new Map();
+    setOutOfCredits(false);
+    aiContextRef.current = stored.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text }));
+    setMessages(
+      stored.map((m) => ({
+        id: genId(),
+        fromUser: m.fromUser,
+        text: m.text,
+        inputTokens: m.inputTokens ?? null,
+        tokenUsage: m.tokenUsage ?? null,
+      })),
+    );
   }, []);
+
+  // First mount: wait for the cloud snapshot, then either restore the synced
+  // conversation or open with a local greeting — no model call either way.
+  useEffect(() => {
+    if (hydratedRef.current) return;
+    if (!cloudChatLoaded) return;
+    hydratedRef.current = true;
+    suppressSaveRef.current = true;
+    if (hasRealConversation(cloudChatRemote)) {
+      restoreFromCloud(cloudChatRemote);
+    } else {
+      startFresh();
+    }
+  }, [cloudChatLoaded, cloudChatRemote, restoreFromCloud, startFresh]);
+
+  // Write-through: persist the conversation whenever it changes locally. Skipped
+  // right after we apply a remote snapshot (suppressSaveRef) so we don't echo.
+  useEffect(() => {
+    messagesRef.current = messages;
+    if (!hydratedRef.current) return;
+    if (suppressSaveRef.current) {
+      suppressSaveRef.current = false;
+      return;
+    }
+    saveCloudChat(toCloudChat(messages));
+  }, [messages, saveCloudChat]);
+
+  // Realtime pull: when another device changes the conversation, adopt it —
+  // unless we're mid-generation, or it's just our own write echoing back.
+  useEffect(() => {
+    if (!hydratedRef.current || typing) return;
+    const remote = cloudChatRemote;
+    if (JSON.stringify(remote) === JSON.stringify(toCloudChat(messagesRef.current))) return;
+    suppressSaveRef.current = true;
+    if (hasRealConversation(remote)) {
+      restoreFromCloud(remote);
+    } else {
+      startFresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudChatRev]);
 
   const setEffort = useCallback((e: ReasoningEffort) => {
     setEffortState(e);
@@ -374,8 +462,10 @@ export function useChatEngine() {
 
   const newChat = useCallback(() => {
     if (typing) return;
+    suppressSaveRef.current = true;
+    clearCloudChat();
     startFresh();
-  }, [typing, startFresh]);
+  }, [typing, startFresh, clearCloudChat]);
 
   const quotaRemaining = data.tokenQuota?.remainingTokens ?? null;
   const noCredits = outOfCredits || (quotaRemaining != null && quotaRemaining <= 0);
