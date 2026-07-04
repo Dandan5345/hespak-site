@@ -1,22 +1,25 @@
-// Ported from the `_is*Intent` keyword-matching helpers + term lists in
-// lib/state/app_controller.dart (search `_ensureLazyPromptsForText`). Decides
-// which lazy prompt packs a given user message needs, so the web chat's
-// system-prompt assembly matches the mobile app's token-saving behavior.
+// Decides which lazy instruction packs a user message needs, so each request
+// carries only the instructions it actually uses (token saving). The pack
+// structure is the web's five-pack layout (see services/chatPrompts.ts):
+// scheduleWrite, scheduleRead, tasks, courses, misc.
 import type { ChatPromptPack } from '../../services/chatPrompts';
 
 const SCHEDULE_DIRECT_TERMS = [
   'לו"ז', 'לו״ז', 'לוז', 'לוח זמנים', 'יומן', 'מערכת שעות',
-  'מה יש לי היום', 'מה יש היום', 'מה יש לי מחר', 'מה יש לי השבוע',
-  'מה מתוכנן', 'מה קורה היום', 'מה קורה מחר', 'מתי יש לי',
-  'תכנן לי את היום', 'סדר לי את היום',
-  'schedule', 'calendar', 'timetable', 'agenda', 'what do i have today', 'what is planned',
+  'schedule', 'calendar', 'timetable', 'agenda',
+];
+const SCHEDULE_READ_TERMS = [
+  'מה יש לי היום', 'מה יש היום', 'מה יש לי מחר', 'מה יש מחר', 'מה יש לי השבוע',
+  'מה מתוכנן', 'מה קורה היום', 'מה קורה מחר', 'מתי יש לי', 'מה יש לי ב',
+  'זמן פנוי', 'פנוי לי', 'מתי אני פנוי', 'מה נשאר לי היום',
+  'what do i have today', 'what is planned', 'free time', 'when am i free',
 ];
 const SCHEDULE_SUBJECTS = [
   'שיעור', 'שיעורים', 'אירוע', 'אירועים', 'פגישה', 'פגישות', 'מבחן', 'בחינה',
   'אימון', 'אימונים', 'תור', 'משמרת', 'מפגש', 'חוג', 'דייט', 'חופש', 'חופשה',
   'class', 'lesson', 'event', 'meeting', 'exam', 'workout', 'training', 'appointment', 'shift',
 ];
-// Time expressions that, together with an add/change verb, almost always mean
+// Time expressions that, together with a write verb, almost always mean
 // "put this on my schedule" (e.g. "תוסיף אימון מחר ב-5").
 const SCHEDULE_TIME_HINTS = [
   'מחר', 'מחרתיים', 'היום', 'הערב', 'בבוקר', 'בצהריים', 'אחר הצהריים', 'בערב', 'הלילה',
@@ -24,26 +27,32 @@ const SCHEDULE_TIME_HINTS = [
   'כל יום', 'כל שבוע', 'שבוע הבא',
   'tomorrow', 'today', 'tonight', "o'clock", 'at ', 'next week', 'every ',
 ];
-const SCHEDULE_ACTIONS = [
-  'תקבע', 'לקבוע', 'קבע', 'תשבץ', 'שבץ', 'לשבץ', 'תוסיף', 'להוסיף',
-  'תעדכן', 'לעדכן', 'תשנה', 'שנה', 'לשנות', 'תזיז', 'להזיז', 'דחה', 'לדחות',
-  'תמחק', 'למחוק', 'מחק', 'מה יש', 'תראה', 'הצג', 'יש לי', 'תכנן', 'לתכנן',
-  'add', 'schedule', 'reschedule', 'move', 'change', 'update', 'delete', 'remove', 'show',
+const WRITE_ACTIONS = [
+  'תקבע', 'לקבוע', 'קבע', 'תשבץ', 'שבץ', 'לשבץ', 'תוסיף', 'להוסיף', 'הוסף',
+  'תעדכן', 'לעדכן', 'עדכן', 'תשנה', 'שנה', 'לשנות', 'תזיז', 'להזיז', 'דחה', 'לדחות',
+  'תמחק', 'למחוק', 'מחק', 'תבטל', 'לבטל', 'בטל', 'תכנן', 'לתכנן', 'סדר לי', 'תפנה',
+  'add', 'schedule', 'reschedule', 'move', 'change', 'update', 'delete', 'remove', 'cancel', 'plan',
+];
+const READ_ACTIONS = [
+  'מה יש', 'תראה', 'להראות', 'הצג', 'תציג', 'יש לי', 'תבדוק', 'לבדוק', 'בדוק', 'מתי',
+  'show', 'check', 'look', 'when', 'list',
 ];
 
 const TASK_SUBJECTS = ['משימה', 'משימות', 'מטלה', 'מטלות', 'תרגיל', 'שיעורי בית', 'assignment', 'task', 'todo', 'to-do', 'homework'];
 const TASK_ACTIONS = [
   'תיצור', 'צור', 'ליצור', 'תוסיף', 'להוסיף', 'הוסף', 'תעדכן', 'לעדכן', 'עדכן',
   'תערוך', 'לערוך', 'ערוך', 'תשנה', 'לשנות', 'שנה', 'תמחק', 'למחוק', 'מחק',
-  'תזכיר', 'להזכיר', 'צריך', 'צריכה', 'לעשות', 'להגיש', 'לסיים', 'סיים', 'להכין', 'הכן', 'יש לי',
-  'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'remind', 'need to', 'submit', 'finish', 'prepare',
+  'תזכיר', 'להזכיר', 'צריך', 'צריכה', 'לעשות', 'להגיש', 'לסיים', 'סיים', 'להכין', 'הכן',
+  'יש לי', 'מה יש', 'אילו', 'איזה', 'תראה', 'הצג',
+  'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'remind', 'need to', 'submit', 'finish', 'prepare', 'show', 'which', 'list',
 ];
 
-const COURSE_SUBJECTS = ['קורס', 'קורסים', 'מקצוע', 'מקצועות', 'סמסטר', 'semester', 'course', 'courses', 'subject', 'class'];
+const COURSE_SUBJECTS = ['קורס', 'קורסים', 'מקצוע', 'מקצועות', 'סמסטר', 'semester', 'course', 'courses', 'subject'];
 const COURSE_ACTIONS = [
   'תיצור', 'צור', 'ליצור', 'תוסיף', 'להוסיף', 'הוסף', 'תעדכן', 'לעדכן', 'עדכן',
   'תערוך', 'לערוך', 'ערוך', 'תשנה', 'לשנות', 'שנה', 'תמחק', 'למחוק', 'מחק',
-  'תפתח', 'פתח', 'לפתוח', 'יש לי', 'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'open',
+  'תפתח', 'פתח', 'לפתוח', 'יש לי', 'אילו', 'איזה',
+  'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'open', 'which',
 ];
 
 const SMART_NOTIFICATION_TERMS = [
@@ -64,12 +73,17 @@ function containsAny(text: string, terms: string[]): boolean {
   return terms.some((term) => text.includes(term));
 }
 
-export function isScheduleIntent(lower: string): boolean {
+export function isScheduleWriteIntent(lower: string): boolean {
   return (
-    containsAny(lower, SCHEDULE_DIRECT_TERMS) ||
-    (containsAny(lower, SCHEDULE_SUBJECTS) && containsAny(lower, SCHEDULE_ACTIONS)) ||
-    // "add/schedule/move … <time>" with no explicit noun still means the calendar.
-    (containsAny(lower, SCHEDULE_TIME_HINTS) && containsAny(lower, SCHEDULE_ACTIONS))
+    containsAny(lower, WRITE_ACTIONS) &&
+    (containsAny(lower, SCHEDULE_DIRECT_TERMS) || containsAny(lower, SCHEDULE_SUBJECTS) || containsAny(lower, SCHEDULE_TIME_HINTS))
+  );
+}
+export function isScheduleReadIntent(lower: string): boolean {
+  return (
+    containsAny(lower, SCHEDULE_READ_TERMS) ||
+    (containsAny(lower, SCHEDULE_DIRECT_TERMS) && containsAny(lower, READ_ACTIONS)) ||
+    (containsAny(lower, SCHEDULE_SUBJECTS) && containsAny(lower, READ_ACTIONS))
   );
 }
 export function isTaskIntent(lower: string): boolean {
@@ -81,43 +95,32 @@ export function isCourseIntent(lower: string): boolean {
 export function isSmartNotificationIntent(lower: string): boolean {
   return containsAny(lower, SMART_NOTIFICATION_TERMS);
 }
-export function isFocusIntent(lower: string): boolean {
-  return containsAny(lower, FOCUS_TERMS);
-}
-export function isIdentityIntent(lower: string): boolean {
-  return containsAny(lower, IDENTITY_TERMS);
-}
-export function isMemoryIntent(lower: string): boolean {
-  return containsAny(lower, MEMORY_TERMS);
+export function isMiscIntent(lower: string): boolean {
+  return (
+    containsAny(lower, SMART_NOTIFICATION_TERMS) ||
+    containsAny(lower, FOCUS_TERMS) ||
+    containsAny(lower, IDENTITY_TERMS) ||
+    containsAny(lower, MEMORY_TERMS)
+  );
 }
 
-/** Mirrors `_ensureLazyPromptsForText`: which packs a message's keywords call for. */
+/** Which packs a message's keywords call for. A schedule *write* always brings
+ * the read pack too — edits/deletes must go through get_schedule first. */
 export function packsForText(text: string): ChatPromptPack[] {
   const lower = text.toLowerCase();
   const packs: ChatPromptPack[] = [];
-  if (isScheduleIntent(lower)) packs.push('schedule');
-  if (isCourseIntent(lower)) packs.push('courses');
+  const write = isScheduleWriteIntent(lower);
+  if (write || isScheduleReadIntent(lower)) packs.push('scheduleRead');
+  if (write) packs.push('scheduleWrite');
   if (isTaskIntent(lower)) packs.push('tasks');
-  if (isSmartNotificationIntent(lower)) packs.push('smartNotifications');
-  if (isFocusIntent(lower)) packs.push('focus');
-  if (isIdentityIntent(lower)) packs.push('identity');
-  if (isMemoryIntent(lower)) packs.push('memory');
+  if (isCourseIntent(lower)) packs.push('courses');
+  if (isMiscIntent(lower)) packs.push('misc');
   return packs;
 }
 
-/** Packs whose Dart counterpart is loaded with `includeEntities: true`
- * (they need to see current courses/tasks/reminders to act on real ids). */
-export const PACKS_NEEDING_ENTITIES: ChatPromptPack[] = ['schedule', 'courses', 'tasks', 'smartNotifications'];
+/** Packs that need to see the live app data (real ids) to act correctly.
+ * scheduleRead is excluded — get_schedule returns its own data. */
+export const PACKS_NEEDING_ENTITIES: ChatPromptPack[] = ['scheduleWrite', 'tasks', 'courses'];
 
-/** Fixed iteration order matching `ChatPromptPack.values` in Dart, so the
- * assembled system turns come out in a stable, predictable order. */
-export const PACK_ORDER: ChatPromptPack[] = [
-  'actionProtocol',
-  'tasks',
-  'courses',
-  'schedule',
-  'focus',
-  'smartNotifications',
-  'identity',
-  'memory',
-];
+/** Fixed iteration order so the assembled system turns come out stable. */
+export const PACK_ORDER: ChatPromptPack[] = ['scheduleRead', 'scheduleWrite', 'tasks', 'courses', 'misc'];

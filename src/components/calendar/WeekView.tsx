@@ -4,7 +4,7 @@
 // jumps to Day view; clicking an event opens edit.
 import { useI18n } from '../../i18n/I18nProvider';
 import type { Course, ScheduleItem, Task } from '../../state/types';
-import { colorForScheduleItem, dayShort, eventsOn, hhmm, sameDay, sundayOf, addDays } from './dateUtils';
+import { colorForScheduleItem, dayShort, eventFill, eventsOn, hhmm, sameDay, sundayOf, addDays, tint } from './dateUtils';
 import { Card } from './ui';
 
 export function WeekView({
@@ -54,7 +54,11 @@ export function WeekView({
                       key={e.id}
                       onClick={() => onEventClick(e)}
                       className="text-start rounded-[var(--sf-radius-sm)] px-2.5 py-1.5 flex items-center gap-2 min-w-0"
-                      style={{ background: `${color}1F`, borderInlineStart: `3px solid ${color}` }}
+                      style={{
+                        background: eventFill(color, 0.13),
+                        border: `1px solid ${tint(color, 0.3)}`,
+                        borderInlineStart: `3px solid ${color}`,
+                      }}
                     >
                       <span className="text-[11px] font-bold shrink-0" style={{ color }}>
                         {e.allDay ? t('event_all_day') : `${hhmm(new Date(e.startDateTime))}–${hhmm(new Date(e.endDateTime))}`}

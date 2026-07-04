@@ -644,8 +644,16 @@ export const translations: Record<string, Record<string, string>> = {
     'en': 'AI is reading your course instructions',
   },
   'chat_status_prompt_schedule': {
-    'he': 'ה-AI לומד איך לקרוא ולשנות את הלו״ז שלך',
-    'en': 'AI is learning how to read and edit your schedule',
+    'he': 'ה-AI לומד איך לקרוא את הלו״ז שלך',
+    'en': 'AI is learning how to read your schedule',
+  },
+  'chat_status_prompt_schedule_write': {
+    'he': 'ה-AI לומד איך לשנות את הלו״ז שלך',
+    'en': 'AI is learning how to edit your schedule',
+  },
+  'chat_status_prompt_misc': {
+    'he': 'ה-AI קורא את הוראות המיקוד, ההתראות והזיכרון',
+    'en': 'AI is reading the focus, reminders and memory instructions',
   },
   'chat_status_prompt_focus': {
     'he': 'ה-AI קורא איך להפעיל מצב פוקוס',
@@ -688,8 +696,16 @@ export const translations: Record<string, Record<string, string>> = {
     'en': 'the course instructions',
   },
   'chat_prompt_read_schedule': {
-    'he': 'את ההוראות איך לקרוא ולשנות לו״ז',
-    'en': 'the instructions for reading and editing schedules',
+    'he': 'את ההוראות איך לקרוא לו״ז',
+    'en': 'the instructions for reading schedules',
+  },
+  'chat_prompt_read_schedule_write': {
+    'he': 'את ההוראות איך לשנות לו״ז',
+    'en': 'the instructions for editing schedules',
+  },
+  'chat_prompt_read_misc': {
+    'he': 'את הוראות המיקוד, ההתראות והזיכרון',
+    'en': 'the focus, reminders and memory instructions',
   },
   'chat_prompt_read_focus': {
     'he': 'את ההוראות איך להפעיל מצב פוקוס',

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { completeChat, QuotaExhaustedError, type ChatTurn } from '../../services/aiChat';
-import { promptPackInstruction, systemPrompt, PACKS_NEEDING_ACTION_PROTOCOL, type ChatPromptPack } from '../../services/chatPrompts';
+import { promptPackInstruction, systemPrompt, type ChatPromptPack } from '../../services/chatPrompts';
 import { useAuth } from '../../state/AuthContext';
 import { useData } from '../../state/DataContext';
 import { useI18n } from '../../i18n/I18nProvider';
 import { genId, reasoningApiValue, reasoningProvider, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
-import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText } from './keywordIntents';
+import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIntent } from './keywordIntents';
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
@@ -195,15 +195,28 @@ export function useChatEngine() {
     ]);
   }, [greetingText, t, clearReveal, setAiContext]);
 
-  // Restore a synced conversation (from a reload or the mobile app) into the
-  // live UI + model context. Mirrors the app's restoreSession: the model context
-  // is rebuilt from the visible turns only.
+  // Restore a synced conversation (reload, history, or another device) into the
+  // live UI + model context, rebuilt from the visible turns. The instruction
+  // packs the conversation already used are re-derived from its user messages
+  // and marked as ALREADY CHARGED — the conversation paid for them when they
+  // first loaded, so re-entering it must not re-charge the initial prompt or
+  // the instruction tokens.
   const restoreFromCloud = useCallback((stored: CloudChatMessage[]) => {
     clearReveal();
-    loadedPacksRef.current = new Set();
-    entitiesNeededRef.current = false;
-    entityContextReadTrackedRef.current = false;
-    systemPromptTokensTrackedRef.current = false;
+    const seeded = new Set<ChatPromptPack>();
+    let entities = false;
+    for (const m of stored) {
+      if (!m.fromUser) continue;
+      for (const pack of packsForText(m.text)) {
+        seeded.add(pack);
+        if (PACKS_NEEDING_ENTITIES.includes(pack)) entities = true;
+      }
+      if (isSmartNotificationIntent(m.text.toLowerCase())) entities = true;
+    }
+    loadedPacksRef.current = seeded;
+    entitiesNeededRef.current = entities;
+    entityContextReadTrackedRef.current = true;
+    systemPromptTokensTrackedRef.current = true;
     promptReadTokensRef.current = 0;
     promptReadDescriptionsRef.current = [];
     promptReadBreakdownRef.current = {};
@@ -274,22 +287,16 @@ export function useChatEngine() {
   const promptReadDescription = useCallback(
     (pack: ChatPromptPack) => {
       switch (pack) {
-        case 'actionProtocol':
-          return t('chat_prompt_read_action');
+        case 'scheduleRead':
+          return t('chat_prompt_read_schedule');
+        case 'scheduleWrite':
+          return t('chat_prompt_read_schedule_write');
         case 'tasks':
           return t('chat_prompt_read_tasks');
         case 'courses':
           return t('chat_prompt_read_courses');
-        case 'schedule':
-          return t('chat_prompt_read_schedule');
-        case 'focus':
-          return t('chat_prompt_read_focus');
-        case 'smartNotifications':
-          return t('chat_prompt_read_smart_notifications');
-        case 'identity':
-          return t('chat_prompt_read_identity');
-        case 'memory':
-          return t('chat_prompt_read_memory');
+        case 'misc':
+          return t('chat_prompt_read_misc');
       }
     },
     [t],
@@ -298,22 +305,16 @@ export function useChatEngine() {
   const promptStatus = useCallback(
     (pack: ChatPromptPack) => {
       switch (pack) {
-        case 'actionProtocol':
-          return t('chat_status_prompt_action');
+        case 'scheduleRead':
+          return t('chat_status_prompt_schedule');
+        case 'scheduleWrite':
+          return t('chat_status_prompt_schedule_write');
         case 'tasks':
           return t('chat_status_prompt_tasks');
         case 'courses':
           return t('chat_status_prompt_courses');
-        case 'schedule':
-          return t('chat_status_prompt_schedule');
-        case 'focus':
-          return t('chat_status_prompt_focus');
-        case 'smartNotifications':
-          return t('chat_status_prompt_smart_notifications');
-        case 'identity':
-          return t('chat_status_prompt_identity');
-        case 'memory':
-          return t('chat_status_prompt_memory');
+        case 'misc':
+          return t('chat_status_prompt_misc');
       }
     },
     [t],
@@ -408,12 +409,13 @@ export function useChatEngine() {
 
   const ensureLazyPacks = useCallback((text: string) => {
     const lower = text.toLowerCase();
-    const detected = packsForText(lower);
-    for (const pack of detected) {
-      if (PACKS_NEEDING_ACTION_PROTOCOL.includes(pack)) addLoadedPack('actionProtocol');
+    for (const pack of packsForText(lower)) {
       addLoadedPack(pack);
       if (PACKS_NEEDING_ENTITIES.includes(pack)) includeEntityContextForPromptRead();
     }
+    // The misc pack itself is small, but managing reminders needs the live
+    // reminder list (ids) from the app data.
+    if (isSmartNotificationIntent(lower)) includeEntityContextForPromptRead();
   }, [addLoadedPack, includeEntityContextForPromptRead]);
 
   const buildMessages = useCallback((): ChatTurn[] => {
@@ -578,8 +580,8 @@ export function useChatEngine() {
       if (typing || memoryFull || ids.length === 0) return;
       const picked = data.tasks.filter((task) => ids.includes(task.id));
       if (picked.length === 0) return;
-      addLoadedPack('actionProtocol');
-      addLoadedPack('schedule');
+      addLoadedPack('scheduleRead');
+      addLoadedPack('scheduleWrite');
       includeEntityContextForPromptRead();
       const payload = picked.map((task) => ({
         id: task.id,
@@ -610,15 +612,16 @@ export function useChatEngine() {
       const summary = applyMutationActions(entry.actions, data, t);
       const undoKey = genId();
       undoSnapshotsRef.current.set(undoKey, snapshot);
-      entityContextReadTrackedRef.current = false;
-      includeEntityContextForPromptRead();
+      // The model keeps seeing the (now updated) app data on later turns, but
+      // the conversation already paid for the app-data read — don't re-charge.
+      entitiesNeededRef.current = true;
       setAiContext([...aiContextRef.current, { role: 'assistant', content: summary }]);
       setMessages((prev) => [
         ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'approved' as const } } : m)),
         { id: genId(), fromUser: false, text: summary, undoKey },
       ]);
     },
-    [data, includeEntityContextForPromptRead, setAiContext, t],
+    [data, setAiContext, t],
   );
 
   const undoChange = useCallback(

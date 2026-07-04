@@ -5,7 +5,7 @@
 import { useMemo } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { Course, ScheduleItem, Task } from '../../state/types';
-import { addDays, colorForScheduleItem, dayShort, eventsOn, hhmm, sameDay, sundayOf } from './dateUtils';
+import { addDays, colorForScheduleItem, dayShort, eventFill, eventsOn, hhmm, sameDay, sundayOf, tint } from './dateUtils';
 import { useTt } from './i18n';
 
 const PX_PER_HOUR = 64;
@@ -139,7 +139,13 @@ export function DayView({
                   key={e.id}
                   onClick={() => onEventClick(e)}
                   className="text-start rounded-[var(--sf-radius-sm)] px-3 py-2 font-bold text-[13px]"
-                  style={{ background: `${color}24`, borderInlineStart: `4px solid ${color}`, color: 'var(--sf-text)' }}
+                  style={{
+                    background: eventFill(color),
+                    border: `1px solid ${tint(color, 0.35)}`,
+                    borderInlineStart: `4px solid ${color}`,
+                    color: 'var(--sf-text)',
+                    boxShadow: '0 1px 5px rgba(0,0,0,0.07)',
+                  }}
                 >
                   {e.title}
                 </button>
@@ -185,14 +191,17 @@ export function DayView({
                 <button
                   key={p.item.id}
                   onClick={() => onEventClick(p.item)}
-                  className="absolute text-start rounded-[var(--sf-radius-sm)] overflow-hidden px-2.5 py-1.5"
+                  className="absolute text-start rounded-[10px] overflow-hidden px-2.5 py-1.5"
                   style={{
                     top,
                     height: h,
-                    insetInlineStart: `calc(${p.col} * (100% / ${p.cols}))`,
-                    width: `calc(100% / ${p.cols} - 3px)`,
-                    background: `${color}24`,
+                    insetInlineStart: `calc(${p.col} * (100% / ${p.cols}) + ${p.col === 0 ? 0 : 2}px)`,
+                    width: `calc(100% / ${p.cols} - ${p.cols > 1 ? 4 : 2}px)`,
+                    background: eventFill(color),
+                    border: `1px solid ${tint(color, 0.35)}`,
                     borderInlineStart: `4px solid ${color}`,
+                    boxShadow: '0 1px 6px rgba(0,0,0,0.08)',
+                    zIndex: 1,
                   }}
                 >
                   <div
@@ -205,7 +214,7 @@ export function DayView({
                     {p.item.title}
                   </div>
                   {!compact && (
-                    <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--sf-text-dim)' }}>
+                    <div className="text-[11px] font-bold truncate" style={{ color }}>
                       {hhmm(new Date(p.item.startDateTime))}–{hhmm(new Date(p.item.endDateTime))}
                     </div>
                   )}

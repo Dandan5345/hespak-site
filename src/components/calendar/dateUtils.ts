@@ -107,6 +107,32 @@ const TYPE_COLOR: Record<EventType, string> = {
   personal: '#10B981',
 };
 
+/** A translucent version of any CSS color we produce (hex `#RRGGBB` or
+ * `rgba(...)` from argbToCss). Needed because appending a hex alpha suffix to
+ * an `rgba()` string is invalid CSS — course/device-calendar colors silently
+ * lost their background tint that way. */
+export function tint(color: string, alpha: number): string {
+  if (color.startsWith('#') && color.length >= 7) {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  const m = color.match(/rgba?\(([^)]+)\)/);
+  if (m) {
+    const [r, g, b] = m[1].split(',').map((s) => s.trim());
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+  return color;
+}
+
+/** Opaque pastel card fill for calendar events: the color's tint layered over
+ * the theme surface, so overlapping side-by-side events stay readable. */
+export function eventFill(color: string, alpha = 0.16): string {
+  const wash = tint(color, alpha);
+  return `linear-gradient(0deg, ${wash}, ${wash}), var(--sf-bg2)`;
+}
+
 /** An event's display color: its linked task's course color if any, else a
  * fixed color by type. Mirrors `colorForScheduleItem` in app_controller.dart. */
 export function colorForScheduleItem(item: ScheduleItem, tasks: Task[], courses: Course[]): string {
