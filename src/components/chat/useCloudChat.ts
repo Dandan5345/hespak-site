@@ -21,13 +21,17 @@ export interface CloudChatMessage {
 }
 
 /** A saved past conversation the user can restore. Same shape as the app's
- * ChatSession, stored alongside the active thread in the chat doc. */
+ * ChatSession, stored alongside the active thread in the chat doc; the web
+ * additionally stores which instruction packs the conversation had loaded so
+ * restoring it brings the exact same capabilities back (no keyword guessing). */
 export interface CloudChatSession {
   id: string;
   title: string;
   createdAt: string;
   messages: CloudChatMessage[];
   totalTokens: number;
+  packs?: string[];
+  packsEntities?: boolean;
 }
 
 /** Up to this many past conversations are kept (newest first), matching the
@@ -43,6 +47,10 @@ function normalize(m: Record<string, unknown>): CloudChatMessage {
   };
 }
 
+function normalizePacks(raw: unknown): string[] {
+  return Array.isArray(raw) ? raw.filter((p): p is string => typeof p === 'string') : [];
+}
+
 function normalizeSession(s: Record<string, unknown>): CloudChatSession {
   const rawMsgs = Array.isArray(s.messages) ? (s.messages as Record<string, unknown>[]) : [];
   return {
@@ -51,6 +59,8 @@ function normalizeSession(s: Record<string, unknown>): CloudChatSession {
     createdAt: String(s.createdAt ?? new Date().toISOString()),
     messages: rawMsgs.map(normalize),
     totalTokens: typeof s.totalTokens === 'number' ? s.totalTokens : 0,
+    packs: normalizePacks(s.packs),
+    packsEntities: Boolean(s.packsEntities),
   };
 }
 
@@ -62,12 +72,16 @@ export interface CloudChat {
   loaded: boolean;
   /** Latest remote snapshot of the conversation. */
   remoteMessages: CloudChatMessage[];
+  /** Instruction packs the active thread had loaded (web-only field). */
+  remotePacks: string[];
+  /** Whether the active thread already includes the app-data context. */
+  remotePacksEntities: boolean;
   /** Saved past conversations (newest first), synced across devices. */
   remoteSessions: CloudChatSession[];
   /** Bumps on every remote snapshot, so effects can react to *changes*. */
   remoteRev: number;
-  /** Debounced write-through of the current conversation. */
-  save: (messages: CloudChatMessage[]) => void;
+  /** Debounced write-through of the current conversation + its loaded packs. */
+  save: (messages: CloudChatMessage[], packs: string[], packsEntities: boolean) => void;
   /** Reset the synced conversation (used by "new chat"). */
   clear: () => void;
   /** Persist the saved-sessions list (capped to MAX_SESSIONS). */
@@ -78,12 +92,16 @@ export function useCloudChat(): CloudChat {
   const { uid } = useAuth();
   const [loaded, setLoaded] = useState(false);
   const [remoteMessages, setRemoteMessages] = useState<CloudChatMessage[]>([]);
+  const [remotePacks, setRemotePacks] = useState<string[]>([]);
+  const [remotePacksEntities, setRemotePacksEntities] = useState(false);
   const [remoteSessions, setRemoteSessions] = useState<CloudChatSession[]>([]);
   const [remoteRev, setRemoteRev] = useState(0);
   const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     setRemoteMessages([]);
+    setRemotePacks([]);
+    setRemotePacksEntities(false);
     setRemoteSessions([]);
     if (!uid) {
       // No account yet (anonymous sign-in still resolving, or offline). Treat as
@@ -97,10 +115,12 @@ export function useCloudChat(): CloudChat {
     const unsub = onSnapshot(
       ref,
       (snap) => {
-        const data = snap.data() as { messages?: unknown; sessions?: unknown } | undefined;
+        const data = snap.data() as { messages?: unknown; sessions?: unknown; packs?: unknown; packsEntities?: unknown } | undefined;
         const raw = Array.isArray(data?.messages) ? (data!.messages as Record<string, unknown>[]) : [];
         const rawSessions = Array.isArray(data?.sessions) ? (data!.sessions as Record<string, unknown>[]) : [];
         setRemoteMessages(raw.map(normalize));
+        setRemotePacks(normalizePacks(data?.packs));
+        setRemotePacksEntities(Boolean(data?.packsEntities));
         setRemoteSessions(rawSessions.map(normalizeSession));
         setRemoteRev((r) => r + 1);
         setLoaded(true);
@@ -111,13 +131,13 @@ export function useCloudChat(): CloudChat {
   }, [uid]);
 
   const save = useCallback(
-    (messages: CloudChatMessage[]) => {
+    (messages: CloudChatMessage[], packs: string[], packsEntities: boolean) => {
       if (!uid) return;
       const trimmed = messages.length > MAX_STORED_MESSAGES ? messages.slice(messages.length - MAX_STORED_MESSAGES) : messages;
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
       debounceRef.current = window.setTimeout(() => {
         const ref = doc(db, 'users', uid, 'appState', 'chat');
-        setDoc(ref, { messages: trimmed, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {
+        setDoc(ref, { messages: trimmed, packs, packsEntities, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {
           /* offline — retried on next turn */
         });
       }, 600);
@@ -129,7 +149,7 @@ export function useCloudChat(): CloudChat {
     if (!uid) return;
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     const ref = doc(db, 'users', uid, 'appState', 'chat');
-    setDoc(ref, { messages: [], updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+    setDoc(ref, { messages: [], packs: [], packsEntities: false, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
   }, [uid]);
 
   const saveSessions = useCallback(
@@ -141,5 +161,5 @@ export function useCloudChat(): CloudChat {
     [uid],
   );
 
-  return { loaded, remoteMessages, remoteSessions, remoteRev, save, clear, saveSessions };
+  return { loaded, remoteMessages, remotePacks, remotePacksEntities, remoteSessions, remoteRev, save, clear, saveSessions };
 }

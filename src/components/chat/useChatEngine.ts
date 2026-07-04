@@ -109,6 +109,8 @@ export function useChatEngine() {
   const {
     loaded: cloudChatLoaded,
     remoteMessages: cloudChatRemote,
+    remotePacks: cloudChatPacks,
+    remotePacksEntities: cloudChatPacksEntities,
     remoteSessions: cloudChatSessions,
     remoteRev: cloudChatRev,
     save: saveCloudChat,
@@ -197,21 +199,27 @@ export function useChatEngine() {
 
   // Restore a synced conversation (reload, history, or another device) into the
   // live UI + model context, rebuilt from the visible turns. The instruction
-  // packs the conversation already used are re-derived from its user messages
-  // and marked as ALREADY CHARGED — the conversation paid for them when they
-  // first loaded, so re-entering it must not re-charge the initial prompt or
-  // the instruction tokens.
-  const restoreFromCloud = useCallback((stored: CloudChatMessage[]) => {
+  // packs come primarily from the packs persisted WITH the conversation (exact,
+  // no guessing — this is what keeps a restored chat acting instead of saying
+  // "I'll check" with no tool spec loaded); keyword-scanning every stored turn
+  // (assistant included) is the union fallback. Everything is marked as ALREADY
+  // CHARGED — the conversation paid when the packs first loaded.
+  const restoreFromCloud = useCallback((stored: CloudChatMessage[], hint?: { packs?: string[]; entities?: boolean }) => {
     clearReveal();
     const seeded = new Set<ChatPromptPack>();
-    let entities = false;
+    for (const p of hint?.packs ?? []) {
+      if ((PACK_ORDER as string[]).includes(p)) seeded.add(p as ChatPromptPack);
+    }
+    let entities = hint?.entities ?? false;
     for (const m of stored) {
-      if (!m.fromUser) continue;
       for (const pack of packsForText(m.text)) {
         seeded.add(pack);
         if (PACKS_NEEDING_ENTITIES.includes(pack)) entities = true;
       }
       if (isSmartNotificationIntent(m.text.toLowerCase())) entities = true;
+    }
+    for (const pack of seeded) {
+      if (PACKS_NEEDING_ENTITIES.includes(pack)) entities = true;
     }
     loadedPacksRef.current = seeded;
     entitiesNeededRef.current = entities;
@@ -242,14 +250,15 @@ export function useChatEngine() {
     hydratedRef.current = true;
     suppressSaveRef.current = true;
     if (hasRealConversation(cloudChatRemote)) {
-      restoreFromCloud(cloudChatRemote);
+      restoreFromCloud(cloudChatRemote, { packs: cloudChatPacks, entities: cloudChatPacksEntities });
     } else {
       startFresh();
     }
-  }, [cloudChatLoaded, cloudChatRemote, restoreFromCloud, startFresh]);
+  }, [cloudChatLoaded, cloudChatRemote, cloudChatPacks, cloudChatPacksEntities, restoreFromCloud, startFresh]);
 
-  // Write-through: persist the conversation whenever it changes locally. Skipped
-  // right after we apply a remote snapshot (suppressSaveRef) so we don't echo.
+  // Write-through: persist the conversation + its loaded packs whenever it
+  // changes locally. Skipped right after we apply a remote snapshot
+  // (suppressSaveRef) so we don't echo.
   useEffect(() => {
     messagesRef.current = messages;
     if (!hydratedRef.current) return;
@@ -257,7 +266,7 @@ export function useChatEngine() {
       suppressSaveRef.current = false;
       return;
     }
-    saveCloudChat(toCloudChat(messages));
+    saveCloudChat(toCloudChat(messages), [...loadedPacksRef.current], entitiesNeededRef.current);
   }, [messages, saveCloudChat]);
 
   // Realtime pull: when another device changes the conversation, adopt it —
@@ -275,7 +284,7 @@ export function useChatEngine() {
     // Firestore returns tokenUsage maps with re-sorted keys.
     if (sameThread(remote, toCloudChat(messagesRef.current))) return;
     suppressSaveRef.current = true;
-    restoreFromCloud(remote);
+    restoreFromCloud(remote, { packs: cloudChatPacks, entities: cloudChatPacksEntities });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cloudChatRev]);
 
@@ -666,6 +675,8 @@ export function useChatEngine() {
           createdAt: new Date().toISOString(),
           messages: current,
           totalTokens: 0,
+          packs: [...loadedPacksRef.current],
+          packsEntities: entitiesNeededRef.current,
         };
         sessions = [session, ...sessions].slice(0, 5);
       }
@@ -691,7 +702,7 @@ export function useChatEngine() {
       if (!session) return;
       saveCloudSessions(archiveCurrent(id));
       // Don't suppress: the restored thread should become the active cloud thread.
-      restoreFromCloud(session.messages);
+      restoreFromCloud(session.messages, { packs: session.packs, entities: session.packsEntities });
     },
     [typing, cloudChatSessions, saveCloudSessions, archiveCurrent, restoreFromCloud],
   );
