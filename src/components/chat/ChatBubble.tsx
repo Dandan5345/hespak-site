@@ -14,6 +14,7 @@ interface Props {
   tokens: SfTokens;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onUndo?: (undoKey: string) => void;
   onGoFocus?: () => void;
   onQuickReply?: (text: string) => void;
 }
@@ -61,7 +62,7 @@ function TokenBreakdown({ usage, tokens }: { usage: NonNullable<LocalChatMessage
   );
 }
 
-export function ChatBubble({ message, tokens, onApprove, onReject, onGoFocus, onQuickReply }: Props) {
+export function ChatBubble({ message, tokens, onApprove, onReject, onUndo, onGoFocus, onQuickReply }: Props) {
   const { t } = useI18n();
   const mine = message.fromUser;
 
@@ -111,6 +112,16 @@ export function ChatBubble({ message, tokens, onApprove, onReject, onGoFocus, on
             <div className="mt-2 text-xs font-semibold" style={{ color: tokens.textFaint }}>
               ✗ {t('chat_reject_change')}
             </div>
+          )}
+
+          {message.undoKey && onUndo && (
+            <button
+              onClick={() => onUndo(message.undoKey!)}
+              className="mt-3 h-8 px-3 rounded-[var(--sf-radius-sm)] text-[12px] font-extrabold"
+              style={{ background: 'var(--sf-bg2)', color: tokens.text, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
+            >
+              ↩️ {t('chat_undo_change')}
+            </button>
           )}
 
           {message.focusMinutes != null && onGoFocus && (

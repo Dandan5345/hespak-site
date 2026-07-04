@@ -55,6 +55,17 @@ const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : und
 const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
 const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
 
+/** Add minutes to a local `YYYY-MM-DDTHH:mm` datetime, returning the same
+ * format. Used to fill in a missing end time so a schedule action the model got
+ * *almost* right still creates something instead of silently doing nothing. */
+function addMinutesIso(iso: string, minutes: number): string | undefined {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return undefined;
+  d.setMinutes(d.getMinutes() + minutes);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** Applies every action in order (so a `create_course` with a proposed
  * `c_ai_...` id can be immediately referenced by a following `create_task`
  * in the same batch), then returns the localized "✅ Done! created N ·
@@ -148,9 +159,13 @@ export function applyMutationActions(actions: Json[], data: Data, t: (key: strin
         const taskId = str(a.taskId) || undefined;
         const linkedTask = taskId ? data.taskById(taskId) : undefined;
         const title = (str(a.title) ?? linkedTask?.title ?? '').trim();
-        const start = str(a.startDateTime);
-        const end = str(a.endDateTime);
-        if (!start || !end || !title) break;
+        const allDay = bool(a.allDay) ?? false;
+        // Accept a couple of alias field names, and fill a missing end time
+        // (default 1h, or same-as-start for all-day) so the item still gets
+        // created instead of silently vanishing.
+        const start = str(a.startDateTime) ?? str(a.start);
+        if (!start || !title) break;
+        const end = str(a.endDateTime) ?? str(a.end) ?? addMinutesIso(start, allDay ? 0 : 60) ?? start;
         data.addScheduleItem({
           id: str(a.id),
           taskId: taskId ?? null,
@@ -160,7 +175,7 @@ export function applyMutationActions(actions: Json[], data: Data, t: (key: strin
           endDateTime: end,
           type: (str(a.type) as EventType | undefined) ?? 'personal',
           weeklyRepeat: bool(a.weeklyRepeat) ?? false,
-          allDay: bool(a.allDay) ?? false,
+          allDay,
           calendarId: str(a.calendarId) ?? null,
           createdBy: 'ai',
         });

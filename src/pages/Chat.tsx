@@ -21,16 +21,17 @@ function fmtTokens(n: number): string {
  * centerpiece feature. See src/components/chat/useChatEngine.ts for the
  * message-assembly / action-protocol logic that mirrors AppController. */
 export default function Chat() {
-  const { t, dir } = useI18n();
+  const { t, dir, lang } = useI18n();
   const { tokens } = useSfTheme();
   const { agentName, setAgentName } = useData();
   const navigate = useNavigate();
 
-  const { messages, typing, effort, setEffort, sendText, confirmPending, rejectPending, newChat, agentDisplayName, quotaRemaining, noCredits, tt } =
+  const { messages, typing, streamingText, effort, setEffort, sendText, confirmPending, rejectPending, undoChange, newChat, sessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, tt } =
     useChatEngine();
 
   const [input, setInput] = useState('');
   const [showEffortSheet, setShowEffortSheet] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
@@ -39,7 +40,7 @@ export default function Chat() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, typing]);
+  }, [messages.length, typing, streamingText]);
 
   const handleSend = () => {
     if (!input.trim() || typing || noCredits) return;
@@ -87,6 +88,22 @@ export default function Chat() {
           </div>
         </div>
         <button
+          onClick={() => setShowHistory(true)}
+          title={t('chat_history_title')}
+          className="w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0 relative"
+          style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
+        >
+          🕘
+          {sessions.length > 0 && (
+            <span
+              className="absolute min-w-[16px] h-4 px-1 rounded-full text-[10px] font-black flex items-center justify-center"
+              style={{ top: -4, insetInlineEnd: -4, background: 'var(--sf-accent-gradient)', color: tokens.onAccent }}
+            >
+              {sessions.length}
+            </span>
+          )}
+        </button>
+        <button
           onClick={newChat}
           title={t('chat_new')}
           className="w-9 h-9 rounded-full flex items-center justify-center text-base shrink-0"
@@ -129,11 +146,23 @@ export default function Chat() {
             tokens={tokens}
             onApprove={confirmPending}
             onReject={rejectPending}
+            onUndo={undoChange}
             onGoFocus={() => navigate('/focus')}
             onQuickReply={(label) => setInput(label)}
           />
         ))}
-        {typing && <TypingIndicator tokens={tokens} />}
+        {/* The agent writing: reveal the reply gradually, like the app. */}
+        {streamingText != null && (
+          <ChatBubble
+            key="streaming"
+            message={{ id: 'streaming', fromUser: false, text: streamingText || '▍' }}
+            tokens={tokens}
+            onApprove={confirmPending}
+            onReject={rejectPending}
+          />
+        )}
+        {/* Thinking dots only while waiting for the reply — not while writing. */}
+        {typing && streamingText == null && <TypingIndicator tokens={tokens} />}
       </div>
 
       {/* composer */}
@@ -179,6 +208,62 @@ export default function Chat() {
       </div>
 
       {showEffortSheet && <ReasoningSheet tokens={tokens} current={effort} onSelect={setEffort} onClose={() => setShowEffortSheet(false)} />}
+
+      {showHistory && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center" onClick={() => setShowHistory(false)}>
+          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.45)' }} />
+          <div
+            className="relative w-full sm:max-w-sm rounded-t-[28px] sm:rounded-[24px] p-5 pb-8 max-h-[70vh] overflow-y-auto"
+            style={{ background: tokens.bg2, color: tokens.text }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-extrabold mb-3">{t('chat_history_title')}</h2>
+            {sessions.length === 0 ? (
+              <div className="text-sm py-6 text-center" style={{ color: tokens.textDim }}>
+                {t('chat_history_empty')}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {sessions.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-2 rounded-[var(--sf-radius-sm)] p-2"
+                    style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
+                  >
+                    <button
+                      onClick={() => {
+                        restoreSession(s.id);
+                        setShowHistory(false);
+                      }}
+                      title={t('chat_history_restore')}
+                      className="flex-1 min-w-0 text-start"
+                    >
+                      <div className="text-[14px] font-bold truncate">{s.title || t('chat_new')}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: tokens.textDim }}>
+                        {new Date(s.createdAt).toLocaleString(lang === 'he' ? 'he-IL' : 'en-US', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => deleteSession(s.id)}
+                      title={t('chat_history_delete')}
+                      aria-label={t('chat_history_delete')}
+                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm"
+                      style={{ color: tokens.textDim }}
+                    >
+                      🗑
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {renaming && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center" onClick={() => setRenaming(false)}>

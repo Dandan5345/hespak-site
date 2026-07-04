@@ -20,12 +20,37 @@ export interface CloudChatMessage {
   tokenUsage: ChatTokenUsage | null;
 }
 
+/** A saved past conversation the user can restore. Same shape as the app's
+ * ChatSession, stored alongside the active thread in the chat doc. */
+export interface CloudChatSession {
+  id: string;
+  title: string;
+  createdAt: string;
+  messages: CloudChatMessage[];
+  totalTokens: number;
+}
+
+/** Up to this many past conversations are kept (newest first), matching the
+ * mobile app's _maxSessions. */
+export const MAX_SESSIONS = 5;
+
 function normalize(m: Record<string, unknown>): CloudChatMessage {
   return {
     fromUser: Boolean(m.fromUser),
     text: String(m.text ?? ''),
     inputTokens: typeof m.inputTokens === 'number' ? m.inputTokens : null,
     tokenUsage: m.tokenUsage && typeof m.tokenUsage === 'object' ? (m.tokenUsage as ChatTokenUsage) : null,
+  };
+}
+
+function normalizeSession(s: Record<string, unknown>): CloudChatSession {
+  const rawMsgs = Array.isArray(s.messages) ? (s.messages as Record<string, unknown>[]) : [];
+  return {
+    id: String(s.id ?? ''),
+    title: String(s.title ?? ''),
+    createdAt: String(s.createdAt ?? new Date().toISOString()),
+    messages: rawMsgs.map(normalize),
+    totalTokens: typeof s.totalTokens === 'number' ? s.totalTokens : 0,
   };
 }
 
@@ -37,23 +62,29 @@ export interface CloudChat {
   loaded: boolean;
   /** Latest remote snapshot of the conversation. */
   remoteMessages: CloudChatMessage[];
+  /** Saved past conversations (newest first), synced across devices. */
+  remoteSessions: CloudChatSession[];
   /** Bumps on every remote snapshot, so effects can react to *changes*. */
   remoteRev: number;
   /** Debounced write-through of the current conversation. */
   save: (messages: CloudChatMessage[]) => void;
   /** Reset the synced conversation (used by "new chat"). */
   clear: () => void;
+  /** Persist the saved-sessions list (capped to MAX_SESSIONS). */
+  saveSessions: (sessions: CloudChatSession[]) => void;
 }
 
 export function useCloudChat(): CloudChat {
   const { uid } = useAuth();
   const [loaded, setLoaded] = useState(false);
   const [remoteMessages, setRemoteMessages] = useState<CloudChatMessage[]>([]);
+  const [remoteSessions, setRemoteSessions] = useState<CloudChatSession[]>([]);
   const [remoteRev, setRemoteRev] = useState(0);
   const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
     setRemoteMessages([]);
+    setRemoteSessions([]);
     if (!uid) {
       // No account yet (anonymous sign-in still resolving, or offline). Treat as
       // "loaded, empty" so the chat can open with a local greeting; a later uid
@@ -66,9 +97,11 @@ export function useCloudChat(): CloudChat {
     const unsub = onSnapshot(
       ref,
       (snap) => {
-        const data = snap.data() as { messages?: unknown } | undefined;
+        const data = snap.data() as { messages?: unknown; sessions?: unknown } | undefined;
         const raw = Array.isArray(data?.messages) ? (data!.messages as Record<string, unknown>[]) : [];
+        const rawSessions = Array.isArray(data?.sessions) ? (data!.sessions as Record<string, unknown>[]) : [];
         setRemoteMessages(raw.map(normalize));
+        setRemoteSessions(rawSessions.map(normalizeSession));
         setRemoteRev((r) => r + 1);
         setLoaded(true);
       },
@@ -99,5 +132,14 @@ export function useCloudChat(): CloudChat {
     setDoc(ref, { messages: [], updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
   }, [uid]);
 
-  return { loaded, remoteMessages, remoteRev, save, clear };
+  const saveSessions = useCallback(
+    (sessions: CloudChatSession[]) => {
+      if (!uid) return;
+      const ref = doc(db, 'users', uid, 'appState', 'chat');
+      setDoc(ref, { sessions: sessions.slice(0, MAX_SESSIONS), updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+    },
+    [uid],
+  );
+
+  return { loaded, remoteMessages, remoteSessions, remoteRev, save, clear, saveSessions };
 }

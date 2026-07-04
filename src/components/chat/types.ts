@@ -24,4 +24,7 @@ export interface LocalChatMessage {
   focusMinutes?: number | null;
   /** Quick-reply chips shown under this bubble (pre-fill the composer only). */
   quickReplies?: string[];
+  /** When set, this bubble confirms an applied AI change and offers an "undo"
+   * button that restores the pre-change snapshot (session-only, like the app). */
+  undoKey?: string;
 }

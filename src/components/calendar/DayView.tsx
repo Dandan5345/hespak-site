@@ -5,7 +5,7 @@
 import { useMemo } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { Course, ScheduleItem, Task } from '../../state/types';
-import { addDays, colorForScheduleItem, dayShort, durationMinutes, eventsOn, hhmm, sameDay, sundayOf } from './dateUtils';
+import { addDays, colorForScheduleItem, dayShort, eventsOn, hhmm, sameDay, sundayOf } from './dateUtils';
 import { useTt } from './i18n';
 
 const PX_PER_HOUR = 64;
@@ -98,6 +98,29 @@ export function DayView({
   const emptyStartHour = sameDay(date, now) ? Math.min(21, Math.max(8, now.getHours() + 1)) : 9;
   const emptyStart = new Date(date.getFullYear(), date.getMonth(), date.getDate(), emptyStartHour, 0);
 
+  // Position/height of an event *as it appears on this day*: a multi-day event
+  // that spills past midnight is clamped to the day's [00:00, 24:00] window, and
+  // a weekly-repeat instance is drawn at its time-of-day on the shown date. This
+  // stops cross-midnight events from overflowing the grid or rendering at the
+  // wrong hour on the following day.
+  const dayStartMs = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0).getTime();
+  const dayEndMs = dayStartMs + 24 * 60 * 60 * 1000;
+  const occurrenceBounds = (item: ScheduleItem): { top: number; height: number } => {
+    const rawStart = new Date(item.startDateTime);
+    const rawEnd = new Date(item.endDateTime);
+    const durMs = Math.max(0, rawEnd.getTime() - rawStart.getTime());
+    const startMs =
+      item.weeklyRepeat && !sameDay(rawStart, date)
+        ? new Date(date.getFullYear(), date.getMonth(), date.getDate(), rawStart.getHours(), rawStart.getMinutes()).getTime()
+        : rawStart.getTime();
+    const clampedStart = Math.max(startMs, dayStartMs);
+    const clampedEnd = Math.min(startMs + durMs, dayEndMs);
+    const top = ((clampedStart - dayStartMs) / 60000) * pxPerMin;
+    const rawHeight = ((clampedEnd - clampedStart) / 60000) * pxPerMin;
+    const height = Math.max(24, Math.min(rawHeight, totalHeight - top));
+    return { top, height };
+  };
+
   return (
     <div className="flex flex-col">
       <WeekStrip date={date} items={items} tasks={tasks} courses={courses} onPick={onDatePick} />
@@ -156,9 +179,8 @@ export function DayView({
             )}
             {placed.map((p) => {
               const color = colorForScheduleItem(p.item, tasks, courses);
-              const top = topFor(new Date(p.item.startDateTime));
-              const h = Math.min(totalHeight, Math.max(24, durationMinutes(p.item) * pxPerMin));
-              const compact = durationMinutes(p.item) <= 45;
+              const { top, height: h } = occurrenceBounds(p.item);
+              const compact = h <= 45 * pxPerMin;
               return (
                 <button
                   key={p.item.id}

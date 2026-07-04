@@ -58,6 +58,11 @@ interface DataCtx {
   setAgentName: (name: string) => void;
   setAgentMemory: (memory: string) => void;
 
+  /** Full snapshot of the cloud state, used to undo an applied AI change. */
+  snapshotState: () => CloudAppState;
+  /** Replace the whole state (and push it) — restores a snapshot for undo. */
+  restoreState: (snapshot: CloudAppState) => void;
+
   deleteAllCloudData: () => Promise<void>;
 }
 
@@ -379,6 +384,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mutate((prev) => ({ ...prev, agentMemory: memory.trim().slice(0, 1400) }));
   };
 
+  const snapshotState = useCallback(() => structuredClone(state), [state]);
+  const restoreState = useCallback((snapshot: CloudAppState) => {
+    mutate(() => structuredClone(snapshot));
+  }, [mutate]);
+
   const deleteAllCloudData = useCallback(async () => {
     if (!uid) return;
     const ref = doc(db, 'users', uid, 'appState', 'data');
@@ -412,10 +422,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       deleteSmartReminder,
       setAgentName,
       setAgentMemory,
+      snapshotState,
+      restoreState,
       deleteAllCloudData,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, state, tokenQuota, courseById, taskById, scheduleById, allScheduleItems, deleteAllCloudData],
+    [loaded, state, tokenQuota, courseById, taskById, scheduleById, allScheduleItems, snapshotState, restoreState, deleteAllCloudData],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

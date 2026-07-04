@@ -34,8 +34,10 @@ export default function Calendar() {
   const [eventModal, setEventModal] = useState<EventModalState | null>(null);
 
   const title = calendarTitle(calView, calDate, lang);
-  const prevGlyph = '←';
-  const nextGlyph = '→';
+  // In RTL the previous button sits on the right and points right; in LTR it's
+  // the usual left/←. Keeping the arrow glyph aligned with its physical side.
+  const prevGlyph = isRtl ? '→' : '←';
+  const nextGlyph = isRtl ? '←' : '→';
 
   function step(dir: 1 | -1) {
     setCalDate((d) => {
@@ -72,7 +74,7 @@ export default function Calendar() {
 
   return (
     <div className="pb-6 max-w-[560px] mx-auto">
-      <div className="flex items-center justify-between gap-2 mb-4" dir="ltr">
+      <div className="flex items-center justify-between gap-2 mb-4" dir={isRtl ? 'rtl' : 'ltr'}>
         <button
           type="button"
           onClick={() => step(-1)}

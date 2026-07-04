@@ -11,7 +11,19 @@ const SCHEDULE_DIRECT_TERMS = [
   'תכנן לי את היום', 'סדר לי את היום',
   'schedule', 'calendar', 'timetable', 'agenda', 'what do i have today', 'what is planned',
 ];
-const SCHEDULE_SUBJECTS = ['שיעור', 'שיעורים', 'אירוע', 'פגישה', 'מבחן', 'בחינה', 'class', 'lesson', 'event', 'meeting', 'exam'];
+const SCHEDULE_SUBJECTS = [
+  'שיעור', 'שיעורים', 'אירוע', 'אירועים', 'פגישה', 'פגישות', 'מבחן', 'בחינה',
+  'אימון', 'אימונים', 'תור', 'משמרת', 'מפגש', 'חוג', 'דייט', 'חופש', 'חופשה',
+  'class', 'lesson', 'event', 'meeting', 'exam', 'workout', 'training', 'appointment', 'shift',
+];
+// Time expressions that, together with an add/change verb, almost always mean
+// "put this on my schedule" (e.g. "תוסיף אימון מחר ב-5").
+const SCHEDULE_TIME_HINTS = [
+  'מחר', 'מחרתיים', 'היום', 'הערב', 'בבוקר', 'בצהריים', 'אחר הצהריים', 'בערב', 'הלילה',
+  'בשעה', 'ביום ראשון', 'ביום שני', 'ביום שלישי', 'ביום רביעי', 'ביום חמישי', 'ביום שישי', 'בשבת',
+  'כל יום', 'כל שבוע', 'שבוע הבא',
+  'tomorrow', 'today', 'tonight', "o'clock", 'at ', 'next week', 'every ',
+];
 const SCHEDULE_ACTIONS = [
   'תקבע', 'לקבוע', 'קבע', 'תשבץ', 'שבץ', 'לשבץ', 'תוסיף', 'להוסיף',
   'תעדכן', 'לעדכן', 'תשנה', 'שנה', 'לשנות', 'תזיז', 'להזיז', 'דחה', 'לדחות',
@@ -53,7 +65,12 @@ function containsAny(text: string, terms: string[]): boolean {
 }
 
 export function isScheduleIntent(lower: string): boolean {
-  return containsAny(lower, SCHEDULE_DIRECT_TERMS) || (containsAny(lower, SCHEDULE_SUBJECTS) && containsAny(lower, SCHEDULE_ACTIONS));
+  return (
+    containsAny(lower, SCHEDULE_DIRECT_TERMS) ||
+    (containsAny(lower, SCHEDULE_SUBJECTS) && containsAny(lower, SCHEDULE_ACTIONS)) ||
+    // "add/schedule/move … <time>" with no explicit noun still means the calendar.
+    (containsAny(lower, SCHEDULE_TIME_HINTS) && containsAny(lower, SCHEDULE_ACTIONS))
+  );
 }
 export function isTaskIntent(lower: string): boolean {
   return containsAny(lower, TASK_SUBJECTS) && containsAny(lower, TASK_ACTIONS);
