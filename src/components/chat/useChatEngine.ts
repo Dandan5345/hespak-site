@@ -4,7 +4,7 @@ import { promptPackInstruction, systemPrompt, type ChatPromptPack } from '../../
 import { useAuth } from '../../state/AuthContext';
 import { useData } from '../../state/DataContext';
 import { useI18n } from '../../i18n/I18nProvider';
-import { genId, reasoningApiValue, reasoningProvider, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
+import { genId, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
 import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIntent } from './keywordIntents';
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, mutationActionsFromJson } from './chatActions';
@@ -57,7 +57,7 @@ function sameThread(a: CloudChatMessage[], b: CloudChatMessage[]): boolean {
 export const CONTEXT_TOKEN_LIMIT = 16000;
 
 const REASONING_KEY = 'sf_reasoning';
-const VALID_EFFORTS: ReasoningEffort[] = ['minimal', 'medium', 'high', 'cheap'];
+const VALID_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max'];
 
 function readEffort(): ReasoningEffort {
   const v = localStorage.getItem(REASONING_KEY);
@@ -454,7 +454,7 @@ export function useChatEngine() {
 
   const applyHistoryDiscount = useCallback(
     (raw: ChatTokenUsage, currentEffort: ReasoningEffort): ChatTokenUsage => {
-      const multiplier = currentEffort === 'cheap' ? 0.5 : 1;
+      const multiplier = reasoningCostMultiplier(currentEffort);
       const estimatedSystem = estimateSystemInstructionTokens();
       const historyTokens = Math.min(Math.max(0, raw.promptTokens - estimatedSystem), raw.promptTokens);
       const systemAndOutput = estimatedSystem + raw.completionTokens;

@@ -122,18 +122,39 @@ export interface TokenQuota {
   displayName?: string | null;
 }
 
-export type ReasoningEffort = 'minimal' | 'medium' | 'high' | 'cheap';
+// Six levels ordered cheapest/fastest → priciest/deepest. Mirror of
+// `ReasoningEffort` in the app's lib/state/models.dart and of the `DEPTH`
+// table in ai-worker/src/index.ts — keep all three in sync.
+export type ReasoningEffort = 'cheap' | 'minimal' | 'medium' | 'high' | 'expert' | 'max';
 
+/** Value for the `reasoningEffort` field sent to the worker. 'cheap' runs on a
+ * different (cheaper) OpenRouter model but with no extended thinking, so it
+ * shares 'minimal's depth value. */
 export function reasoningApiValue(effort: ReasoningEffort): string {
   return effort === 'cheap' ? 'minimal' : effort;
 }
 
+/** AI provider this depth routes to. 'cheap' and 'max' use OpenRouter (Mistral
+ * / Gemma respectively); the rest use DeepSeek. */
 export function reasoningProvider(effort: ReasoningEffort): 'deepseek' | 'openrouter' {
-  return effort === 'cheap' ? 'openrouter' : 'deepseek';
+  return effort === 'cheap' || effort === 'max' ? 'openrouter' : 'deepseek';
 }
 
+/** Quota cost multiplier per raw provider token. 'cheap' is the lightest model
+ * (half price); 'max' is the premium Gemma model with the deepest thinking
+ * (double price); everything else is standard price. */
 export function reasoningCostMultiplier(effort: ReasoningEffort): number {
-  return effort === 'cheap' ? 0.5 : 1;
+  if (effort === 'cheap') return 0.5;
+  if (effort === 'max') return 2;
+  return 1;
+}
+
+/** "×0.5" / "×2" badge for non-standard-price tiers; null for standard-price
+ * tiers so the UI isn't cluttered. */
+export function reasoningCostBadge(effort: ReasoningEffort): string | null {
+  if (effort === 'cheap') return '×0.5';
+  if (effort === 'max') return '×2';
+  return null;
 }
 
 export function reasoningEmoji(effort: ReasoningEffort): string {
@@ -142,6 +163,10 @@ export function reasoningEmoji(effort: ReasoningEffort): string {
       return '🧠';
     case 'high':
       return '✨';
+    case 'expert':
+      return '🔬';
+    case 'max':
+      return '👑';
     case 'cheap':
       return '🪙';
     default:

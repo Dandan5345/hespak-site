@@ -13,7 +13,14 @@ import { TaskPickerSheet } from '../components/chat/TaskPickerSheet';
 import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TrashIcon } from '../components/chat/icons';
 import { reasoningEmoji } from '../state/types';
 
-const REASONING_LABEL_KEY = { minimal: 'reasoning_minimal', medium: 'reasoning_medium', high: 'reasoning_high', cheap: 'reasoning_cheap' } as const;
+const REASONING_LABEL_KEY = {
+  cheap: 'reasoning_cheap',
+  minimal: 'reasoning_minimal',
+  medium: 'reasoning_medium',
+  high: 'reasoning_high',
+  expert: 'reasoning_expert',
+  max: 'reasoning_max',
+} as const;
 
 function fmtTokens(n: number): string {
   if (n <= 0) return '0';

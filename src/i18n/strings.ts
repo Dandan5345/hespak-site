@@ -515,6 +515,16 @@ export const translations: Record<string, Record<string, string>> = {
     'he': 'הכי חסכוני — מודל קל (Mistral)',
     'en': 'Most economical — a light model (Mistral)',
   },
+  'reasoning_expert': { 'he': 'מומחה', 'en': 'Expert' },
+  'reasoning_expert_hint': {
+    'he': 'החשיבה המקסימלית של דיפסיק — למשימות הכי מורכבות',
+    'en': 'DeepSeek\'s maximum reasoning — for the hardest tasks',
+  },
+  'reasoning_max': { 'he': 'מקסימלי', 'en': 'Maximum' },
+  'reasoning_max_hint': {
+    'he': 'המודל החזק ביותר (Gemma) עם החשיבה העמוקה ביותר — הכי יקר',
+    'en': 'The strongest model (Gemma) with the deepest thinking — the priciest tier',
+  },
 
   // --- chat: chat credits & history ---
   'chat_tokens': { 'he': '{count} קרדיטי שיחה', 'en': '{count} chat credits' },

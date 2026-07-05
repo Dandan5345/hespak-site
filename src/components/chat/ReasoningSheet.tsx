@@ -1,20 +1,26 @@
 import { useI18n } from '../../i18n/I18nProvider';
 import type { SfTokens } from '../../theme/tokens';
-import { reasoningEmoji, type ReasoningEffort } from '../../state/types';
+import { reasoningCostBadge, reasoningEmoji, type ReasoningEffort } from '../../state/types';
 import { BottomSheet } from './BottomSheet';
 
-const EFFORTS: ReasoningEffort[] = ['minimal', 'medium', 'high', 'cheap'];
+// Cheapest/fastest → priciest/deepest. Mirror of ReasoningEffort.values order
+// in the app's lib/state/models.dart.
+const EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max'];
 const LABEL_KEY: Record<ReasoningEffort, string> = {
+  cheap: 'reasoning_cheap',
   minimal: 'reasoning_minimal',
   medium: 'reasoning_medium',
   high: 'reasoning_high',
-  cheap: 'reasoning_cheap',
+  expert: 'reasoning_expert',
+  max: 'reasoning_max',
 };
 const HINT_KEY: Record<ReasoningEffort, string> = {
+  cheap: 'reasoning_cheap_hint',
   minimal: 'reasoning_minimal_hint',
   medium: 'reasoning_medium_hint',
   high: 'reasoning_high_hint',
-  cheap: 'reasoning_cheap_hint',
+  expert: 'reasoning_expert_hint',
+  max: 'reasoning_max_hint',
 };
 
 interface Props {
@@ -57,6 +63,14 @@ export function ReasoningSheet({ tokens, current, onSelect, onClose }: Props) {
                     {t(HINT_KEY[e])}
                   </span>
                 </span>
+                {reasoningCostBadge(e) && (
+                  <span
+                    className="text-[11px] font-extrabold rounded-full px-2 py-1"
+                    style={{ background: tokens.surface2, color: tokens.textDim }}
+                  >
+                    {reasoningCostBadge(e)}
+                  </span>
+                )}
                 {selected && (
                   <span className="text-lg" style={{ color: tokens.accent }}>
                     ✓
