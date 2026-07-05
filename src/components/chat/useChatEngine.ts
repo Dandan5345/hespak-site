@@ -104,6 +104,31 @@ function estimateTokens(text: string): number {
   return Math.ceil(heb / 2 + other / 4);
 }
 
+function aiOutputContextTokens(text: string, usage?: ChatTokenUsage | null): number {
+  const estimated = estimateTokens(text);
+  return usage ? Math.max(estimated, usage.completionTokens) : estimated;
+}
+
+function messageContextTokens(message: {
+  fromUser: boolean;
+  text: string;
+  inputTokens?: number | null;
+  tokenUsage?: ChatTokenUsage | null;
+}): number {
+  const estimated = estimateTokens(message.text);
+  if (message.fromUser) return Math.max(estimated, message.inputTokens ?? 0);
+  return aiOutputContextTokens(message.text, message.tokenUsage);
+}
+
+function contextTokenAdjustmentForMessages(messages: Array<{
+  fromUser: boolean;
+  text: string;
+  inputTokens?: number | null;
+  tokenUsage?: ChatTokenUsage | null;
+}>): number {
+  return messages.reduce((sum, message) => sum + messageContextTokens(message) - estimateTokens(message.text), 0);
+}
+
 function billableTokens(rawTokens: number, multiplier: number): number {
   if (rawTokens <= 0) return 0;
   return Math.min(Math.max(1, Math.ceil(rawTokens * multiplier)), rawTokens);
@@ -169,11 +194,18 @@ export function useChatEngine() {
 
   // Single write-path for the model context: keeps the ref and the estimated
   // token counter in sync so the 16K memory gate is always accurate.
-  const setAiContext = useCallback((turns: ChatTurn[]) => {
+  const setAiContext = useCallback((turns: ChatTurn[], tokenAdjustment = 0) => {
     aiContextRef.current = turns;
     let total = 0;
     for (const turn of turns) total += estimateTokens(turn.content);
-    setContextTokens(total);
+    setContextTokens(Math.max(0, total + tokenAdjustment));
+  }, []);
+
+  const appendAiContextTurn = useCallback((turn: ChatTurn, actualTokens?: number) => {
+    aiContextRef.current = [...aiContextRef.current, turn];
+    const estimated = estimateTokens(turn.content);
+    const counted = actualTokens ?? estimated;
+    setContextTokens((prev) => Math.max(0, prev + counted));
   }, []);
 
   // Stop any in-progress character reveal and drop the partial bubble.
@@ -243,7 +275,10 @@ export function useChatEngine() {
     promptReadBreakdownRef.current = {};
     pendingRef.current = new Map();
     setOutOfCredits(false);
-    setAiContext(stored.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })));
+    setAiContext(
+      stored.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })),
+      contextTokenAdjustmentForMessages(stored),
+    );
     setMessages(
       stored.map((m) => ({
         id: genId(),
@@ -547,7 +582,10 @@ export function useChatEngine() {
             : undefined;
           const replyText = result.text;
           setTypingStatus(null);
-          setAiContext([...aiContextRef.current, { role: 'assistant', content: replyText }]);
+          appendAiContextTurn(
+            { role: 'assistant', content: replyText },
+            aiOutputContextTokens(replyText, usage),
+          );
 
           const parsed = extractJson(replyText);
 
@@ -560,7 +598,7 @@ export function useChatEngine() {
             );
             const encoded = JSON.stringify(lookup);
             addPromptReadContext(t('chat_prompt_read_schedule_result'), encoded, t('chat_status_prompt_schedule_result'));
-            setAiContext([...aiContextRef.current, { role: 'user', content: encoded }]);
+            appendAiContextTurn({ role: 'user', content: encoded });
             continue;
           }
 
@@ -610,7 +648,7 @@ export function useChatEngine() {
         setTypingStatus(null);
       }
     },
-    [addPromptReadContext, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, pushAiMessage, revealReply, setAiContext, t, tt],
+    [addPromptReadContext, appendAiContextTurn, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, pushAiMessage, revealReply, t, tt],
   );
 
   // Pro tiers get double the conversation memory.
@@ -623,10 +661,10 @@ export function useChatEngine() {
       if (!trimmed || typing || memoryFull) return;
       ensureLazyPacks(trimmed);
       setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: trimmed, inputTokens: estimateTokens(trimmed) }]);
-      setAiContext([...aiContextRef.current, { role: 'user', content: trimmed }]);
+      appendAiContextTurn({ role: 'user', content: trimmed });
       void runAiLoop(effort);
     },
-    [typing, memoryFull, ensureLazyPacks, runAiLoop, effort, setAiContext],
+    [typing, memoryFull, ensureLazyPacks, runAiLoop, effort, appendAiContextTurn],
   );
 
   // Attach existing tasks for the AI to weave into the schedule — the web
@@ -652,10 +690,10 @@ export function useChatEngine() {
         ...prev,
         { id: genId(), fromUser: true, text: `${t('chat_attached_tasks')} (${picked.length})`, inputTokens: estimateTokens(modelText) },
       ]);
-      setAiContext([...aiContextRef.current, { role: 'user', content: modelText }]);
+      appendAiContextTurn({ role: 'user', content: modelText });
       void runAiLoop(effort);
     },
-    [typing, memoryFull, data.tasks, addLoadedPack, includeEntityContextForPromptRead, t, setAiContext, runAiLoop, effort],
+    [typing, memoryFull, data.tasks, addLoadedPack, includeEntityContextForPromptRead, t, appendAiContextTurn, runAiLoop, effort],
   );
 
   const confirmPending = useCallback(
@@ -671,13 +709,13 @@ export function useChatEngine() {
       // The model keeps seeing the (now updated) app data on later turns, but
       // the conversation already paid for the app-data read — don't re-charge.
       entitiesNeededRef.current = true;
-      setAiContext([...aiContextRef.current, { role: 'assistant', content: summary }]);
+      appendAiContextTurn({ role: 'assistant', content: summary });
       setMessages((prev) => [
         ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'approved' as const } } : m)),
         { id: genId(), fromUser: false, text: summary, undoKey },
       ]);
     },
-    [data, setAiContext, t],
+    [data, appendAiContextTurn, t],
   );
 
   const undoChange = useCallback(
@@ -687,14 +725,14 @@ export function useChatEngine() {
       undoSnapshotsRef.current.delete(undoKey);
       data.restoreState(snapshot);
       const text = t('chat_change_undone');
-      setAiContext([...aiContextRef.current, { role: 'assistant', content: text }]);
+      appendAiContextTurn({ role: 'assistant', content: text });
       setMessages((prev) => [
         // Drop the undo affordance from the confirmation bubble, then confirm.
         ...prev.map((m) => (m.undoKey === undoKey ? { ...m, undoKey: undefined } : m)),
         { id: genId(), fromUser: false, text },
       ]);
     },
-    [data, setAiContext, t],
+    [data, appendAiContextTurn, t],
   );
 
   const rejectPending = useCallback((id: string) => {
@@ -702,12 +740,12 @@ export function useChatEngine() {
     if (!entry || entry.resolved !== 'pending') return;
     entry.resolved = 'rejected';
     const text = t('chat_change_rejected_followup');
-    setAiContext([...aiContextRef.current, { role: 'assistant', content: text }]);
+    appendAiContextTurn({ role: 'assistant', content: text });
     setMessages((prev) => [
       ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'rejected' as const } } : m)),
       { id: genId(), fromUser: false, text },
     ]);
-  }, [setAiContext, t]);
+  }, [appendAiContextTurn, t]);
 
   // Archive the current conversation as a session (newest first, capped) if it
   // has real content. Returns the resulting sessions list.
@@ -780,7 +818,10 @@ export function useChatEngine() {
         tokenUsage: usage ?? null,
       };
       const compacted = [summaryMessage, ...keep];
-      setAiContext(compacted.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })));
+      setAiContext(
+        compacted.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })),
+        contextTokenAdjustmentForMessages(compacted),
+      );
       setMessages(compacted);
     } catch (e) {
       if (e instanceof QuotaExhaustedError) {
