@@ -19,7 +19,7 @@ export class QuotaExhaustedError extends Error {
   }
 }
 
-// Same Cloudflare worker the mobile app talks to — same DeepSeek/Mistral/GPT
+// Same Cloudflare worker the mobile app talks to — same DeepSeek/Mistral/GPT/Gemini
 // backends, same per-user token quota (keyed by Firebase uid).
 const CHAT_ENDPOINT = 'https://studyflow-ai.nakachedoron37.workers.dev/chat';
 

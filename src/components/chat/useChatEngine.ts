@@ -4,7 +4,7 @@ import { promptPackInstruction, summarizeChatInstruction, systemPrompt, type Cha
 import { useAuth } from '../../state/AuthContext';
 import { useData } from '../../state/DataContext';
 import { useI18n } from '../../i18n/I18nProvider';
-import { genId, isProEffort, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatModelFamily, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
+import { genId, isProEffort, normalizeEffortForFamily, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatModelFamily, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
 import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIntent } from './keywordIntents';
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
@@ -71,6 +71,7 @@ export const PRO_CONTEXT_TOKEN_LIMIT = 32000;
 
 const REASONING_KEY = 'sf_reasoning';
 const MODEL_FAMILY_KEY = 'sf_model_family';
+const GEMINI_PRO_KEY = 'sf_gemini_pro';
 const VALID_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max', 'proSmart', 'proDeep', 'proExpert'];
 
 function readEffort(): ReasoningEffort {
@@ -80,7 +81,12 @@ function readEffort(): ReasoningEffort {
 }
 
 function readModelFamily(): ChatModelFamily {
-  return localStorage.getItem(MODEL_FAMILY_KEY) === 'gpt' ? 'gpt' : 'deepseek';
+  const saved = localStorage.getItem(MODEL_FAMILY_KEY);
+  return saved === 'gpt' || saved === 'gemini' ? saved : 'deepseek';
+}
+
+function readGeminiPro(): boolean {
+  return localStorage.getItem(GEMINI_PRO_KEY) === '1';
 }
 
 const EXTRA: Record<string, Record<string, string>> = {
@@ -178,6 +184,7 @@ export function useChatEngine() {
   const [outOfCredits, setOutOfCredits] = useState(false);
   const [effort, setEffortState] = useState<ReasoningEffort>(readEffort);
   const [modelFamily, setModelFamilyState] = useState<ChatModelFamily>(readModelFamily);
+  const [geminiPro, setGeminiProState] = useState<boolean>(readGeminiPro);
 
   const aiContextRef = useRef<ChatTurn[]>([]);
   const loadedPacksRef = useRef<Set<ChatPromptPack>>(new Set());
@@ -364,19 +371,21 @@ export function useChatEngine() {
   const setModelFamily = useCallback((family: ChatModelFamily) => {
     setModelFamilyState(family);
     localStorage.setItem(MODEL_FAMILY_KEY, family);
-    if (family === 'gpt') {
-      setEffortState((prev) => {
-        const next = prev === 'cheap' || isProEffort(prev) ? 'minimal' : prev;
-        if (next !== prev) localStorage.setItem(REASONING_KEY, next);
-        return next;
-      });
-    }
+    setEffortState((prev) => {
+      const next = normalizeEffortForFamily(prev, family);
+      if (next !== prev) localStorage.setItem(REASONING_KEY, next);
+      return next;
+    });
+  }, []);
+
+  const setGeminiPro = useCallback((enabled: boolean) => {
+    setGeminiProState(enabled);
+    localStorage.setItem(GEMINI_PRO_KEY, enabled ? '1' : '0');
   }, []);
 
   useEffect(() => {
-    if (modelFamily !== 'gpt') return;
-    if (effort !== 'cheap' && !isProEffort(effort)) return;
-    setEffort('minimal');
+    const normalized = normalizeEffortForFamily(effort, modelFamily);
+    if (normalized !== effort) setEffort(normalized);
   }, [effort, modelFamily, setEffort]);
 
   const promptReadDescription = useCallback(
@@ -515,7 +524,8 @@ export function useChatEngine() {
 
   const buildMessages = useCallback((): ChatTurn[] => {
     const today = new Date().toISOString().slice(0, 10);
-    const turns: ChatTurn[] = [{ role: 'system', content: systemPrompt(today, data.agentName, isProEffort(effort)) }];
+    const premiumPrompt = isProEffort(effort) || (modelFamily === 'gemini' && geminiPro);
+    const turns: ChatTurn[] = [{ role: 'system', content: systemPrompt(today, data.agentName, premiumPrompt) }];
     if (data.agentMemory.trim()) {
       turns.push({ role: 'system', content: `[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}` });
     }
@@ -527,20 +537,21 @@ export function useChatEngine() {
     }
     turns.push(...aiContextRef.current);
     return turns;
-  }, [data.agentName, data.agentMemory, data.courses, data.tasks, data.smartReminders, effort]);
+  }, [data.agentName, data.agentMemory, data.courses, data.tasks, data.smartReminders, effort, geminiPro, modelFamily]);
 
   const estimateSystemInstructionTokens = useCallback((): number => {
     const today = new Date().toISOString().slice(0, 10);
-    let tokens = estimateTokens(systemPrompt(today, data.agentName, isProEffort(effort)));
+    const premiumPrompt = isProEffort(effort) || (modelFamily === 'gemini' && geminiPro);
+    let tokens = estimateTokens(systemPrompt(today, data.agentName, premiumPrompt));
     if (data.agentMemory.trim()) tokens += estimateTokens(`[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}`);
     if (entitiesNeededRef.current) tokens += estimateTokens(buildEntitiesContext(data.courses, data.tasks, data.smartReminders));
     for (const pack of loadedPacksRef.current) tokens += estimateTokens(promptPackInstruction(pack));
     return tokens;
-  }, [data.agentMemory, data.agentName, data.courses, data.smartReminders, data.tasks, effort]);
+  }, [data.agentMemory, data.agentName, data.courses, data.smartReminders, data.tasks, effort, geminiPro, modelFamily]);
 
   const applyHistoryDiscount = useCallback(
     (raw: ChatTokenUsage, currentEffort: ReasoningEffort): ChatTokenUsage => {
-      const multiplier = reasoningCostMultiplier(currentEffort, modelFamily);
+      const multiplier = reasoningCostMultiplier(currentEffort, modelFamily, geminiPro);
       const estimatedSystem = estimateSystemInstructionTokens();
       const historyTokens = Math.min(Math.max(0, raw.promptTokens - estimatedSystem), raw.promptTokens);
       const systemAndOutput = estimatedSystem + raw.completionTokens;
@@ -553,7 +564,7 @@ export function useChatEngine() {
         chargedTokens,
       };
     },
-    [estimateSystemInstructionTokens, modelFamily],
+    [estimateSystemInstructionTokens, geminiPro, modelFamily],
   );
 
   const applyAuthoritativeCharge = useCallback((usage: ChatTokenUsage, charged?: number): ChatTokenUsage => {
@@ -573,7 +584,8 @@ export function useChatEngine() {
           if (!systemPromptTokensTrackedRef.current) {
             systemPromptTokensTrackedRef.current = true;
             const today = new Date().toISOString().slice(0, 10);
-            const sysPrompt = systemPrompt(today, data.agentName, isProEffort(currentEffort));
+            const premiumPrompt = isProEffort(currentEffort) || (modelFamily === 'gemini' && geminiPro);
+            const sysPrompt = systemPrompt(today, data.agentName, premiumPrompt);
             const memory = data.agentMemory.trim() ? `[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}` : '';
             addPromptReadContext(t('chat_prompt_read_system'), memory ? `${sysPrompt}\n${memory}` : sysPrompt, t('chat_status_prompt_system'));
           }
@@ -587,7 +599,7 @@ export function useChatEngine() {
           const turns = buildMessages();
           const result = await completeChat(turns, {
             reasoningEffort: reasoningApiValue(currentEffort),
-            provider: reasoningProvider(currentEffort, modelFamily),
+            provider: reasoningProvider(currentEffort, modelFamily, geminiPro),
             idToken: await idToken(),
             displayName,
           });
@@ -673,11 +685,14 @@ export function useChatEngine() {
         setTypingStatus(null);
       }
     },
-    [addPromptReadContext, appendAiContextTurn, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, modelFamily, pushAiMessage, revealReply, t, tt],
+    [addPromptReadContext, appendAiContextTurn, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, geminiPro, idToken, lang, modelFamily, pushAiMessage, revealReply, t, tt],
   );
 
   // Pro tiers get double the conversation memory.
-  const contextLimit = isProEffort(effort) ? PRO_CONTEXT_TOKEN_LIMIT : CONTEXT_TOKEN_LIMIT;
+  const contextLimit =
+    isProEffort(effort) || (modelFamily === 'gemini' && geminiPro)
+      ? PRO_CONTEXT_TOKEN_LIMIT
+      : CONTEXT_TOKEN_LIMIT;
   const memoryFull = contextTokens >= contextLimit;
 
   const sendText = useCallback(
@@ -820,7 +835,7 @@ export function useChatEngine() {
         [...aiContextRef.current, { role: 'user', content: summarizeChatInstruction }],
         {
           reasoningEffort: reasoningApiValue(effort),
-          provider: reasoningProvider(effort, modelFamily),
+          provider: reasoningProvider(effort, modelFamily, geminiPro),
           idToken: await idToken(),
           displayName,
         },
@@ -860,7 +875,7 @@ export function useChatEngine() {
       setTyping(false);
       setTypingStatus(null);
     }
-  }, [typing, summarizing, effort, modelFamily, idToken, displayName, data, applyAuthoritativeCharge, applyHistoryDiscount, saveCloudSessions, archiveCurrent, setAiContext, pushAiMessage, t, tt]);
+  }, [typing, summarizing, effort, geminiPro, modelFamily, idToken, displayName, data, applyAuthoritativeCharge, applyHistoryDiscount, saveCloudSessions, archiveCurrent, setAiContext, pushAiMessage, t, tt]);
 
   // Restore a saved session into the active conversation, archiving whatever is
   // open now (mirrors the app's restoreSession).
@@ -904,6 +919,8 @@ export function useChatEngine() {
       setEffort,
       modelFamily,
       setModelFamily,
+      geminiPro,
+      setGeminiPro,
       sendText,
       attachTasks,
       confirmPending,
@@ -922,6 +939,6 @@ export function useChatEngine() {
       memoryFull,
       tt,
     }),
-    [messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
+    [messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
   );
 }

@@ -566,6 +566,7 @@ export const translations: Record<string, Record<string, string>> = {
   },
   'chat_model_deepseek': { 'he': 'מודלי DeepSeek', 'en': 'DeepSeek models' },
   'chat_model_gpt': { 'he': 'מודלי GPT', 'en': 'GPT models' },
+  'chat_model_gemini': { 'he': 'מודלי Gemini', 'en': 'Gemini models' },
 
   // --- chat: Pro mode (premium models) ---
   'chat_pro_activate': { 'he': 'הפעל פרו', 'en': 'Go Pro' },
@@ -577,6 +578,14 @@ export const translations: Record<string, Record<string, string>> = {
   'chat_gpt_desc': {
     'he': 'GPT-5.4 mini עם כל רמות החשיבה — עולה פי 2.5',
     'en': 'GPT-5.4 mini with every reasoning depth — costs 2.5x',
+  },
+  'chat_gemini_desc': {
+    'he': 'Gemini Flash-Lite עם רמות חשיבה נתמכות',
+    'en': 'Gemini Flash-Lite with supported reasoning depths',
+  },
+  'chat_gemini_pro_desc': {
+    'he': 'Gemini 3.5 Flash עם חשיבה עמוקה יותר — עולה פי 2.5',
+    'en': 'Gemini 3.5 Flash with deeper reasoning — costs 2.5x',
   },
   'reasoning_pro_smart': { 'he': 'חכם', 'en': 'Smart' },
   'reasoning_pro_smart_hint': {

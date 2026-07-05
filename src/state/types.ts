@@ -122,12 +122,12 @@ export interface TokenQuota {
   displayName?: string | null;
 }
 
-export type ChatModelFamily = 'deepseek' | 'gpt';
+export type ChatModelFamily = 'deepseek' | 'gpt' | 'gemini';
 
 // Six normal levels ordered cheapest/fastest → deepest, plus the three
-// DeepSeek Pro tiers ("הפעל פרו"). GPT is selected separately via
-// ChatModelFamily and can use the regular reasoning levels at ×2.5. Mirror of
-// `ReasoningEffort` in the app's lib/state/models.dart and of the `DEPTH`
+// DeepSeek Pro tiers ("הפעל פרו"). GPT/Gemini are selected separately via
+// ChatModelFamily and can use their supported regular reasoning levels. Mirror
+// of `ReasoningEffort` in the app's lib/state/models.dart and of the `DEPTH`
 // table in ai-worker/src/index.ts — keep all three in sync.
 export type ReasoningEffort =
   | 'cheap'
@@ -164,17 +164,37 @@ export function reasoningApiValue(effort: ReasoningEffort): string {
   }
 }
 
-/** AI provider this depth routes to. GPT is a separate family; in DeepSeek
- * family, only 'cheap' uses OpenRouter/Mistral. */
-export function reasoningProvider(effort: ReasoningEffort, family: ChatModelFamily = 'deepseek'): 'deepseek' | 'openrouter' | 'openai' {
+export function normalizeEffortForFamily(effort: ReasoningEffort, family: ChatModelFamily): ReasoningEffort {
+  if (family === 'deepseek') return effort;
+  if (effort === 'cheap') return 'minimal';
+  if (effort === 'proSmart') return 'medium';
+  if (effort === 'proDeep') return 'high';
+  if (effort === 'proExpert') return 'expert';
+  if (family === 'gemini' && effort === 'max') return 'expert';
+  return effort;
+}
+
+/** AI provider this depth routes to. GPT/Gemini are separate families; in
+ * DeepSeek family, only 'cheap' uses OpenRouter/Mistral. */
+export function reasoningProvider(
+  effort: ReasoningEffort,
+  family: ChatModelFamily = 'deepseek',
+  geminiPro = false,
+): 'deepseek' | 'openrouter' | 'openai' | 'gemini' | 'gemini_pro' {
   if (family === 'gpt') return 'openai';
+  if (family === 'gemini') return geminiPro ? 'gemini_pro' : 'gemini';
   return effort === 'cheap' ? 'openrouter' : 'deepseek';
 }
 
 /** Quota cost multiplier per raw provider token. 'cheap' is the lightest model
- * (half price); DeepSeek pro tiers and GPT are ×2.5. */
-export function reasoningCostMultiplier(effort: ReasoningEffort, family: ChatModelFamily = 'deepseek'): number {
+ * (half price); DeepSeek pro tiers, GPT, and Gemini Pro are ×2.5. */
+export function reasoningCostMultiplier(
+  effort: ReasoningEffort,
+  family: ChatModelFamily = 'deepseek',
+  geminiPro = false,
+): number {
   if (family === 'gpt') return 2.5;
+  if (family === 'gemini') return geminiPro ? 2.5 : 1;
   if (effort === 'cheap') return 0.5;
   if (isProEffort(effort)) return 2.5;
   return 1;
@@ -182,8 +202,13 @@ export function reasoningCostMultiplier(effort: ReasoningEffort, family: ChatMod
 
 /** "×0.5" / "×2.5" badge for non-standard-price tiers; null for
  * standard-price tiers so the UI isn't cluttered. */
-export function reasoningCostBadge(effort: ReasoningEffort, family: ChatModelFamily = 'deepseek'): string | null {
+export function reasoningCostBadge(
+  effort: ReasoningEffort,
+  family: ChatModelFamily = 'deepseek',
+  geminiPro = false,
+): string | null {
   if (family === 'gpt') return '×2.5';
+  if (family === 'gemini') return geminiPro ? '×2.5' : null;
   if (effort === 'cheap') return '×0.5';
   if (isProEffort(effort)) return '×2.5';
   return null;

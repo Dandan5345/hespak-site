@@ -41,7 +41,7 @@ export default function Chat() {
   const navigate = useNavigate();
 
   const {
-    messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, sendText, attachTasks,
+    messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, attachTasks,
     confirmPending, rejectPending, undoChange, newChat, summarizeChat, sessions, restoreSession, deleteSession,
     agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt,
   } = useChatEngine();
@@ -460,8 +460,10 @@ export default function Chat() {
           tokens={tokens}
           current={effort}
           modelFamily={modelFamily}
+          geminiPro={geminiPro}
           onSelect={setEffort}
           onSelectModelFamily={setModelFamily}
+          onSelectGeminiPro={setGeminiPro}
           onClose={() => setShowEffortSheet(false)}
         />
       )}
