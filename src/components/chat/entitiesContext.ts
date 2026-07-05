@@ -57,7 +57,7 @@ export function scheduleForDate(
     : first;
   if (last.getTime() < first.getTime()) last = first;
   const maxLast = new Date(first);
-  maxLast.setDate(maxLast.getDate() + 30);
+  maxLast.setDate(maxLast.getDate() + 61);
   if (last.getTime() > maxLast.getTime()) last = maxLast;
   const events = scheduleItems
     .filter((e) => {

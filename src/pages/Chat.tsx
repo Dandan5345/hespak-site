@@ -42,7 +42,7 @@ export default function Chat() {
 
   const {
     messages, typing, typingStatus, streamingText, effort, setEffort, sendText, attachTasks,
-    confirmPending, rejectPending, undoChange, newChat, sessions, restoreSession, deleteSession,
+    confirmPending, rejectPending, undoChange, newChat, summarizeChat, sessions, restoreSession, deleteSession,
     agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt,
   } = useChatEngine();
 
@@ -240,13 +240,27 @@ export default function Chat() {
             <div className="text-sm font-semibold mb-2.5" style={{ color: tokens.text }}>
               {t('chat_memory_full')}
             </div>
-            <button
-              onClick={newChat}
-              className="h-10 px-5 rounded-full text-sm font-extrabold sf-press"
-              style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent, boxShadow: tokens.glow !== 'none' ? tokens.glow : undefined }}
-            >
-              {t('chat_memory_new_chat')}
-            </button>
+            <div className="flex flex-wrap justify-center gap-2">
+              {/* Summarize-and-compact keeps the conversation going: the model
+                  writes a brief, and the thread continues as summary + last 10
+                  messages (the full chat is archived to the history). */}
+              <button
+                onClick={() => void summarizeChat()}
+                disabled={typing}
+                className="h-10 px-5 rounded-full text-sm font-extrabold sf-press disabled:opacity-50"
+                style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent, boxShadow: tokens.glow !== 'none' ? tokens.glow : undefined }}
+              >
+                {t('chat_memory_summarize')}
+              </button>
+              <button
+                onClick={newChat}
+                disabled={typing}
+                className="h-10 px-5 rounded-full text-sm font-extrabold sf-press disabled:opacity-50"
+                style={{ background: tokens.surface, color: tokens.text, border: `1px solid ${tokens.navBorderColor}` }}
+              >
+                {t('chat_memory_new_chat')}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex items-end gap-2">

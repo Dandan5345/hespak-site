@@ -626,10 +626,22 @@ export const translations: Record<string, Record<string, string>> = {
     'en': '⚠️ This chat is nearing its memory limit — consider starting a new chat soon.',
   },
   'chat_memory_full': {
-    'he': '🧠 זיכרון השיחה מלא (16,000 טוקנים). כדי להמשיך, פתחו שיחה חדשה — השיחה הנוכחית תישמר בהיסטוריה.',
-    'en': '🧠 This chat\'s memory is full (16,000 tokens). Start a new chat to continue — this one is saved in your history.',
+    'he': '🧠 זיכרון השיחה מלא. כדי להמשיך, אפשר לסכם ולפנות מקום או לפתוח שיחה חדשה — השיחה הנוכחית תישמר בהיסטוריה.',
+    'en': '🧠 This chat\'s memory is full. Summarize it to free space or start a new chat — this one is saved in your history.',
   },
-  'chat_memory_new_chat': { 'he': '✨ התחל שיחה חדשה', 'en': '✨ Start a new chat' },
+  'chat_memory_new_chat': { 'he': '✨ שיחה חדשה', 'en': '✨ New chat' },
+  'chat_memory_summarize': {
+    'he': '📋 סכם שיחה ופנה מקום',
+    'en': '📋 Summarize & free space',
+  },
+  'chat_summary_prefix': {
+    'he': '📋 סיכום השיחה עד כה:',
+    'en': '📋 Summary of the conversation so far:',
+  },
+  'chat_status_summarizing': {
+    'he': 'מסכם את השיחה ומפנה מקום...',
+    'en': 'Summarizing the conversation…',
+  },
   'chat_history_title': { 'he': '📝 היסטוריית שיחות', 'en': '📝 Chat history' },
   'chat_history_empty': { 'he': 'אין שיחות שמורות', 'en': 'No saved chats' },
   'chat_history_restore': { 'he': 'פתח שיחה', 'en': 'Open chat' },

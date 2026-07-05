@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { completeChat, QuotaExhaustedError, type ChatTurn } from '../../services/aiChat';
-import { promptPackInstruction, systemPrompt, type ChatPromptPack } from '../../services/chatPrompts';
+import { promptPackInstruction, summarizeChatInstruction, systemPrompt, type ChatPromptPack } from '../../services/chatPrompts';
 import { useAuth } from '../../state/AuthContext';
 import { useData } from '../../state/DataContext';
 import { useI18n } from '../../i18n/I18nProvider';
-import { genId, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
+import { genId, isProEffort, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
 import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIntent } from './keywordIntents';
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
@@ -63,9 +63,11 @@ function threadIsPrefix(a: CloudChatMessage[], b: CloudChatMessage[]): boolean {
 }
 
 /** Hard cap on the conversation memory kept per chat: the model always sees
- * the full history up to ~16K estimated tokens; past that the user is asked to
+ * the full history up to ~16K estimated tokens (32K on the Pro tiers); past
+ * that the user can either summarize-and-compact the conversation in place or
  * start a new chat (the old one stays in the history). */
 export const CONTEXT_TOKEN_LIMIT = 16000;
+export const PRO_CONTEXT_TOKEN_LIMIT = 32000;
 
 const REASONING_KEY = 'sf_reasoning';
 const VALID_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max', 'proSmart', 'proDeep', 'proExpert', 'proMax'];
@@ -453,7 +455,7 @@ export function useChatEngine() {
 
   const buildMessages = useCallback((): ChatTurn[] => {
     const today = new Date().toISOString().slice(0, 10);
-    const turns: ChatTurn[] = [{ role: 'system', content: systemPrompt(today, data.agentName) }];
+    const turns: ChatTurn[] = [{ role: 'system', content: systemPrompt(today, data.agentName, isProEffort(effort)) }];
     if (data.agentMemory.trim()) {
       turns.push({ role: 'system', content: `[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}` });
     }
@@ -465,16 +467,16 @@ export function useChatEngine() {
     }
     turns.push(...aiContextRef.current);
     return turns;
-  }, [data.agentName, data.agentMemory, data.courses, data.tasks, data.smartReminders]);
+  }, [data.agentName, data.agentMemory, data.courses, data.tasks, data.smartReminders, effort]);
 
   const estimateSystemInstructionTokens = useCallback((): number => {
     const today = new Date().toISOString().slice(0, 10);
-    let tokens = estimateTokens(systemPrompt(today, data.agentName));
+    let tokens = estimateTokens(systemPrompt(today, data.agentName, isProEffort(effort)));
     if (data.agentMemory.trim()) tokens += estimateTokens(`[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}`);
     if (entitiesNeededRef.current) tokens += estimateTokens(buildEntitiesContext(data.courses, data.tasks, data.smartReminders));
     for (const pack of loadedPacksRef.current) tokens += estimateTokens(promptPackInstruction(pack));
     return tokens;
-  }, [data.agentMemory, data.agentName, data.courses, data.smartReminders, data.tasks]);
+  }, [data.agentMemory, data.agentName, data.courses, data.smartReminders, data.tasks, effort]);
 
   const applyHistoryDiscount = useCallback(
     (raw: ChatTokenUsage, currentEffort: ReasoningEffort): ChatTokenUsage => {
@@ -502,7 +504,7 @@ export function useChatEngine() {
           if (!systemPromptTokensTrackedRef.current) {
             systemPromptTokensTrackedRef.current = true;
             const today = new Date().toISOString().slice(0, 10);
-            const sysPrompt = systemPrompt(today, data.agentName);
+            const sysPrompt = systemPrompt(today, data.agentName, isProEffort(currentEffort));
             const memory = data.agentMemory.trim() ? `[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}` : '';
             addPromptReadContext(t('chat_prompt_read_system'), memory ? `${sysPrompt}\n${memory}` : sysPrompt, t('chat_status_prompt_system'));
           }
@@ -599,7 +601,9 @@ export function useChatEngine() {
     [addPromptReadContext, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, pushAiMessage, revealReply, setAiContext, t, tt],
   );
 
-  const memoryFull = contextTokens >= CONTEXT_TOKEN_LIMIT;
+  // Pro tiers get double the conversation memory.
+  const contextLimit = isProEffort(effort) ? PRO_CONTEXT_TOKEN_LIMIT : CONTEXT_TOKEN_LIMIT;
+  const memoryFull = contextTokens >= contextLimit;
 
   const sendText = useCallback(
     (text: string) => {
@@ -724,6 +728,57 @@ export function useChatEngine() {
     startFresh();
   }, [typing, startFresh, clearCloudChat, saveCloudSessions, archiveCurrent]);
 
+  // "Summarize & free space" at the memory cap: ask the model for a compact
+  // brief of the whole conversation, archive the full thread into the history,
+  // then continue the live chat as summary-bubble + the last 10 messages — the
+  // model context shrinks drastically but nothing is really lost.
+  const [summarizing, setSummarizing] = useState(false);
+  const summarizeChat = useCallback(async () => {
+    if (typing || summarizing) return;
+    const visible = messagesRef.current;
+    if (!hasRealConversation(toCloudChat(visible))) return;
+    setSummarizing(true);
+    setTyping(true);
+    setTypingStatus(t('chat_status_summarizing'));
+    try {
+      const result = await completeChat(
+        [...aiContextRef.current, { role: 'user', content: summarizeChatInstruction }],
+        {
+          reasoningEffort: reasoningApiValue(effort),
+          provider: reasoningProvider(effort),
+          idToken: await idToken(),
+          displayName,
+        },
+      );
+      const summary = result.text.trim();
+      if (!summary) throw new Error('empty summary');
+      const usage = result.usage ? applyHistoryDiscount(result.usage, effort) : undefined;
+      // Keep the full conversation reachable from the history before compacting.
+      saveCloudSessions(archiveCurrent());
+      const keep = visible.slice(-10);
+      const summaryMessage: LocalChatMessage = {
+        id: genId(),
+        fromUser: false,
+        text: `${t('chat_summary_prefix')}\n\n${summary}`,
+        tokenUsage: usage ?? null,
+      };
+      const compacted = [summaryMessage, ...keep];
+      setAiContext(compacted.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })));
+      setMessages(compacted);
+    } catch (e) {
+      if (e instanceof QuotaExhaustedError) {
+        setOutOfCredits(true);
+        pushAiMessage(tt('chat_quota_exhausted_web'));
+      } else {
+        pushAiMessage(t('chat_error'));
+      }
+    } finally {
+      setSummarizing(false);
+      setTyping(false);
+      setTypingStatus(null);
+    }
+  }, [typing, summarizing, effort, idToken, displayName, applyHistoryDiscount, saveCloudSessions, archiveCurrent, setAiContext, pushAiMessage, t, tt]);
+
   // Restore a saved session into the active conversation, archiving whatever is
   // open now (mirrors the app's restoreSession).
   const restoreSession = useCallback(
@@ -770,6 +825,7 @@ export function useChatEngine() {
       rejectPending,
       undoChange,
       newChat,
+      summarizeChat,
       sessions: cloudChatSessions,
       restoreSession,
       deleteSession,
@@ -777,10 +833,10 @@ export function useChatEngine() {
       quotaRemaining,
       noCredits,
       contextTokens,
-      contextLimit: CONTEXT_TOKEN_LIMIT,
+      contextLimit,
       memoryFull,
       tt,
     }),
-    [messages, typing, typingStatus, streamingText, effort, setEffort, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, memoryFull, tt],
+    [messages, typing, typingStatus, streamingText, effort, setEffort, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
   );
 }
