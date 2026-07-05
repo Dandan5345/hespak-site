@@ -11,6 +11,7 @@ import { AgentAvatar } from '../components/chat/AgentAvatar';
 import { BottomSheet } from '../components/chat/BottomSheet';
 import { TaskPickerSheet } from '../components/chat/TaskPickerSheet';
 import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TrashIcon } from '../components/chat/icons';
+import { ProgressRing } from '../components/focus/ProgressRing';
 import { reasoningEmoji } from '../state/types';
 
 const REASONING_LABEL_KEY = {
@@ -83,10 +84,15 @@ export default function Chat() {
     setRenaming(false);
   };
 
-  // Conversation-memory meter (16K limit): green→amber→red as it fills up.
+  // Conversation-memory meter: fills as context is used, while the center shows
+  // how much room is left.
   const memPct = Math.min(100, Math.round((contextTokens / contextLimit) * 100));
-  const memNear = !memoryFull && memPct >= 90;
-  const memColor = memoryFull ? '#EF4444' : memPct >= 85 ? '#F59E0B' : tokens.accent;
+  const memRemainingPct = Math.max(0, 100 - memPct);
+  const memNeedsAttention = memPct >= 70;
+  const memCritical = memPct >= 90;
+  const memColor = memoryFull || memCritical ? '#EF4444' : memNeedsAttention ? '#F59E0B' : '#10B981';
+  const memColorEnd = memoryFull || memCritical ? '#FB7185' : memNeedsAttention ? '#FBBF24' : '#34D399';
+  const memShadow = memNeedsAttention ? `0 0 18px ${memColor}55` : undefined;
 
   const iconBtn = {
     background: tokens.surface,
@@ -158,13 +164,73 @@ export default function Chat() {
             <span className="hidden sm:inline">{t(REASONING_LABEL_KEY[effort])}</span>
           </button>
         </div>
-        {/* conversation-memory meter (16K tokens per chat) */}
-        <div
-          className="h-[3px] w-full"
-          title={`${t('chat_memory_label')}: ${fmtTokens(contextTokens)} / ${fmtTokens(contextLimit)}`}
-          style={{ background: tokens.ringTrack }}
-        >
-          <div className="h-full transition-all duration-500" style={{ width: `${memPct}%`, background: memColor }} />
+        <div className="px-3 pb-3">
+          <div
+            className="flex items-center gap-3 rounded-[var(--sf-radius-sm)] px-3 py-2"
+            title={`${t('chat_memory_label')}: ${fmtTokens(contextTokens)} / ${fmtTokens(contextLimit)}`}
+            style={{
+              background: tokens.surface,
+              border: `${tokens.cardBorderWidth}px solid ${memNeedsAttention ? `${memColor}66` : tokens.cardBorderColor}`,
+              boxShadow: memNeedsAttention ? `0 10px 28px -18px ${memColor}` : undefined,
+            }}
+          >
+            <div className="shrink-0">
+              <ProgressRing
+                size={46}
+                stroke={5}
+                progress={memPct / 100}
+                track={tokens.ringTrack}
+                colorStart={memColor}
+                colorEnd={memColorEnd}
+                glow={memShadow}
+              >
+                <div className="text-center leading-none">
+                  <div className="text-[11px] font-black" style={{ color: memColor }}>
+                    {memRemainingPct}%
+                  </div>
+                  <div className="text-[8px] font-extrabold mt-0.5" style={{ color: tokens.textFaint }}>
+                    {t('chat_context_left_short')}
+                  </div>
+                </div>
+              </ProgressRing>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-black" style={{ color: tokens.text }}>
+                  {t('chat_context_title')}
+                </span>
+                {memNeedsAttention && (
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: memColor, boxShadow: memShadow }} />
+                )}
+              </div>
+              <div className="mt-0.5 text-[11px] font-semibold truncate" style={{ color: tokens.textDim }}>
+                {t('chat_context_remaining')
+                  .replace('{percent}', `${memRemainingPct}`)
+                  .replace('{used}', fmtTokens(contextTokens))
+                  .replace('{limit}', fmtTokens(contextLimit))}
+              </div>
+              {memNeedsAttention && !memoryFull && (
+                <div className="mt-0.5 text-[10px] font-bold truncate" style={{ color: memColor }}>
+                  {t(memCritical ? 'chat_context_critical' : 'chat_context_warning')}
+                </div>
+              )}
+            </div>
+            {memNeedsAttention && !memoryFull && (
+              <button
+                type="button"
+                onClick={() => void summarizeChat()}
+                disabled={typing}
+                className="h-8 px-3 rounded-full text-[11px] font-black shrink-0 sf-press disabled:opacity-50"
+                style={{
+                  background: memCritical ? '#EF4444' : memColor,
+                  color: '#FFFFFF',
+                  boxShadow: memShadow,
+                }}
+              >
+                {t('chat_memory_summarize_now')}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -217,14 +283,6 @@ export default function Chat() {
         className="p-3 rounded-b-[var(--sf-radius-lg)]"
         style={{ background: 'var(--sf-nav-bg)', border: `var(--sf-nav-border-width) solid var(--sf-nav-border-color)`, borderTop: 'none' }}
       >
-        {memNear && (
-          <div
-            className="mb-2 rounded-[var(--sf-radius-sm)] px-3 py-2 text-xs font-semibold text-center"
-            style={{ background: 'rgba(245, 158, 11, 0.14)', color: '#F59E0B' }}
-          >
-            {t('chat_memory_near')}
-          </div>
-        )}
         {noCredits ? (
           <div
             className="rounded-[var(--sf-radius-sm)] px-4 py-3 text-sm font-semibold text-center"

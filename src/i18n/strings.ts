@@ -621,9 +621,23 @@ export const translations: Record<string, Record<string, string>> = {
   },
   'chat_tokens_total': { 'he': 'סה״כ קרדיטי שיחה', 'en': 'Total chat credits' },
   'chat_memory_label': { 'he': 'זיכרון שיחה', 'en': 'Chat memory' },
+  'chat_context_title': { 'he': 'קונטקסט', 'en': 'Context' },
+  'chat_context_left_short': { 'he': 'נשאר', 'en': 'left' },
+  'chat_context_remaining': {
+    'he': 'נשאר {percent}% · {used} מתוך {limit} טוקנים',
+    'en': '{percent}% left · {used} of {limit} tokens',
+  },
+  'chat_context_warning': {
+    'he': 'מעל 70% שימוש — אפשר לסכם ולפנות מקום.',
+    'en': 'Over 70% used — you can summarize and free space.',
+  },
+  'chat_context_critical': {
+    'he': 'כמעט מלא — מומלץ לסכם עכשיו.',
+    'en': 'Almost full — summarizing now is recommended.',
+  },
   'chat_memory_near': {
-    'he': '⚠️ השיחה מתקרבת לגבול הזיכרון — כדאי לפתוח שיחה חדשה בקרוב.',
-    'en': '⚠️ This chat is nearing its memory limit — consider starting a new chat soon.',
+    'he': 'השיחה מתקרבת לגבול הזיכרון — כדאי לסכם ולפנות מקום בקרוב.',
+    'en': 'This chat is nearing its memory limit — consider summarizing it soon.',
   },
   'chat_memory_full': {
     'he': '🧠 זיכרון השיחה מלא. כדי להמשיך, אפשר לסכם ולפנות מקום או לפתוח שיחה חדשה — השיחה הנוכחית תישמר בהיסטוריה.',
@@ -633,6 +647,10 @@ export const translations: Record<string, Record<string, string>> = {
   'chat_memory_summarize': {
     'he': '📋 סכם שיחה ופנה מקום',
     'en': '📋 Summarize & free space',
+  },
+  'chat_memory_summarize_now': {
+    'he': 'סכם עכשיו',
+    'en': 'Summarize now',
   },
   'chat_summary_prefix': {
     'he': '📋 סיכום השיחה עד כה:',
