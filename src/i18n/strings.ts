@@ -587,6 +587,13 @@ export const translations: Record<string, Record<string, string>> = {
     'he': 'Gemini 3.5 Flash עם חשיבה עמוקה יותר — עולה פי 2.5',
     'en': 'Gemini 3.5 Flash with deeper reasoning — costs 2.5x',
   },
+  'chat_model_switch_title': { 'he': 'לעבור למודל אחר?', 'en': 'Switch models?' },
+  'chat_model_switch_body': {
+    'he': 'מעבר למודל אחר בשיחה פתוחה דורש פתיחת שיחה חדשה.',
+    'en': 'Switching to a different model in an open chat requires starting a new chat.',
+  },
+  'chat_model_switch_confirm': { 'he': 'מעבר לשיחה חדשה', 'en': 'Start new chat' },
+  'chat_model_switch_cancel': { 'he': 'ביטול', 'en': 'Cancel' },
   'reasoning_pro_smart': { 'he': 'חכם', 'en': 'Smart' },
   'reasoning_pro_smart_hint': {
     'he': 'DeepSeek V4 Pro עם חשיבה קלה — חכם ומהיר',

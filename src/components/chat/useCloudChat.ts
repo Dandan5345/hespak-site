@@ -13,9 +13,12 @@ import { db } from '../../firebase/config';
 import { useAuth } from '../../state/AuthContext';
 import type { ChatTokenUsage } from '../../state/types';
 
+export type CloudUndoSnapshots = Record<string, string>;
+
 export interface CloudChatMessage {
   fromUser: boolean;
   text: string;
+  actionKeys: string[];
   inputTokens: number | null;
   tokenUsage: ChatTokenUsage | null;
 }
@@ -42,9 +45,23 @@ function normalize(m: Record<string, unknown>): CloudChatMessage {
   return {
     fromUser: Boolean(m.fromUser),
     text: String(m.text ?? ''),
+    actionKeys: Array.isArray(m.actionKeys) ? m.actionKeys.filter((k): k is string => typeof k === 'string') : [],
     inputTokens: typeof m.inputTokens === 'number' ? m.inputTokens : null,
     tokenUsage: m.tokenUsage && typeof m.tokenUsage === 'object' ? (m.tokenUsage as ChatTokenUsage) : null,
   };
+}
+
+function normalizeUndoSnapshots(raw: unknown): CloudUndoSnapshots {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: CloudUndoSnapshots = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!key.startsWith('ai_undo_change_')) continue;
+    if (typeof value === 'string') out[key] = value;
+    else if (value && typeof value === 'object' && typeof (value as { snapshotJson?: unknown }).snapshotJson === 'string') {
+      out[key] = (value as { snapshotJson: string }).snapshotJson;
+    }
+  }
+  return out;
 }
 
 function normalizePacks(raw: unknown): string[] {
@@ -78,10 +95,12 @@ export interface CloudChat {
   remotePacksEntities: boolean;
   /** Saved past conversations (newest first), synced across devices. */
   remoteSessions: CloudChatSession[];
+  /** Undo snapshots keyed by actionKeys carried on confirmation bubbles. */
+  remoteUndoSnapshots: CloudUndoSnapshots;
   /** Bumps on every remote snapshot, so effects can react to *changes*. */
   remoteRev: number;
   /** Debounced write-through of the current conversation + its loaded packs. */
-  save: (messages: CloudChatMessage[], packs: string[], packsEntities: boolean) => void;
+  save: (messages: CloudChatMessage[], packs: string[], packsEntities: boolean, undoSnapshots?: CloudUndoSnapshots) => void;
   /** Reset the synced conversation (used by "new chat"). */
   clear: () => void;
   /** Persist the saved-sessions list (capped to MAX_SESSIONS). */
@@ -95,6 +114,7 @@ export function useCloudChat(): CloudChat {
   const [remotePacks, setRemotePacks] = useState<string[]>([]);
   const [remotePacksEntities, setRemotePacksEntities] = useState(false);
   const [remoteSessions, setRemoteSessions] = useState<CloudChatSession[]>([]);
+  const [remoteUndoSnapshots, setRemoteUndoSnapshots] = useState<CloudUndoSnapshots>({});
   const [remoteRev, setRemoteRev] = useState(0);
   const debounceRef = useRef<number | null>(null);
 
@@ -103,6 +123,7 @@ export function useCloudChat(): CloudChat {
     setRemotePacks([]);
     setRemotePacksEntities(false);
     setRemoteSessions([]);
+    setRemoteUndoSnapshots({});
     if (!uid) {
       // No account yet (anonymous sign-in still resolving, or offline). Treat as
       // "loaded, empty" so the chat can open with a local greeting; a later uid
@@ -115,13 +136,14 @@ export function useCloudChat(): CloudChat {
     const unsub = onSnapshot(
       ref,
       (snap) => {
-        const data = snap.data() as { messages?: unknown; sessions?: unknown; packs?: unknown; packsEntities?: unknown } | undefined;
+        const data = snap.data() as { messages?: unknown; sessions?: unknown; packs?: unknown; packsEntities?: unknown; undoSnapshots?: unknown } | undefined;
         const raw = Array.isArray(data?.messages) ? (data!.messages as Record<string, unknown>[]) : [];
         const rawSessions = Array.isArray(data?.sessions) ? (data!.sessions as Record<string, unknown>[]) : [];
         setRemoteMessages(raw.map(normalize));
         setRemotePacks(normalizePacks(data?.packs));
         setRemotePacksEntities(Boolean(data?.packsEntities));
         setRemoteSessions(rawSessions.map(normalizeSession));
+        setRemoteUndoSnapshots(normalizeUndoSnapshots(data?.undoSnapshots));
         setRemoteRev((r) => r + 1);
         setLoaded(true);
       },
@@ -131,13 +153,19 @@ export function useCloudChat(): CloudChat {
   }, [uid]);
 
   const save = useCallback(
-    (messages: CloudChatMessage[], packs: string[], packsEntities: boolean) => {
+    (messages: CloudChatMessage[], packs: string[], packsEntities: boolean, undoSnapshots?: CloudUndoSnapshots) => {
       if (!uid) return;
       const trimmed = messages.length > MAX_STORED_MESSAGES ? messages.slice(messages.length - MAX_STORED_MESSAGES) : messages;
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
       debounceRef.current = window.setTimeout(() => {
         const ref = doc(db, 'users', uid, 'appState', 'chat');
-        setDoc(ref, { messages: trimmed, packs, packsEntities, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {
+        setDoc(ref, {
+          messages: trimmed,
+          packs,
+          packsEntities,
+          ...(undoSnapshots ? { undoSnapshots } : {}),
+          updatedAt: serverTimestamp(),
+        }, { merge: true }).catch(() => {
           /* offline — retried on next turn */
         });
       }, 600);
@@ -149,7 +177,7 @@ export function useCloudChat(): CloudChat {
     if (!uid) return;
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     const ref = doc(db, 'users', uid, 'appState', 'chat');
-    setDoc(ref, { messages: [], packs: [], packsEntities: false, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+    setDoc(ref, { messages: [], packs: [], packsEntities: false, undoSnapshots: {}, updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
   }, [uid]);
 
   const saveSessions = useCallback(
@@ -161,5 +189,5 @@ export function useCloudChat(): CloudChat {
     [uid],
   );
 
-  return { loaded, remoteMessages, remotePacks, remotePacksEntities, remoteSessions, remoteRev, save, clear, saveSessions };
+  return { loaded, remoteMessages, remotePacks, remotePacksEntities, remoteSessions, remoteUndoSnapshots, remoteRev, save, clear, saveSessions };
 }

@@ -16,6 +16,7 @@ export interface LocalChatMessage {
   id: string;
   fromUser: boolean;
   text: string;
+  actionKeys?: string[];
   inputTokens?: number | null;
   tokenUsage?: ChatTokenUsage | null;
   pending?: PendingMutation | null;
@@ -25,6 +26,6 @@ export interface LocalChatMessage {
   /** Quick-reply chips shown under this bubble (pre-fill the composer only). */
   quickReplies?: string[];
   /** When set, this bubble confirms an applied AI change and offers an "undo"
-   * button that restores the pre-change snapshot (session-only, like the app). */
+   * button that restores the pre-change snapshot. */
   undoKey?: string;
 }

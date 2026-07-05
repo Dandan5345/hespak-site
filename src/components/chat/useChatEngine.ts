@@ -9,7 +9,7 @@ import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIn
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
-import { useCloudChat, type CloudChatMessage, type CloudChatSession } from './useCloudChat';
+import { useCloudChat, type CloudChatMessage, type CloudChatSession, type CloudUndoSnapshots } from './useCloudChat';
 import type { LocalChatMessage } from './types';
 import type { CloudAppState } from '../../state/types';
 
@@ -28,6 +28,7 @@ function toCloudChat(messages: LocalChatMessage[]): CloudChatMessage[] {
   return messages.map((m) => ({
     fromUser: m.fromUser,
     text: m.text,
+    actionKeys: m.actionKeys ?? (m.undoKey ? [m.undoKey] : []),
     inputTokens: m.inputTokens ?? null,
     tokenUsage: m.tokenUsage ?? null,
   }));
@@ -154,6 +155,13 @@ interface PendingEntry {
   resolved: 'pending' | 'approved' | 'rejected';
 }
 
+const UNDO_MESSAGE_WINDOW = 5;
+
+function undoKeyFromMessage(message: Pick<LocalChatMessage, 'actionKeys' | 'undoKey'>): string | undefined {
+  const keys = [...(message.actionKeys ?? []), ...(message.undoKey ? [message.undoKey] : [])];
+  return keys.find((key) => key.startsWith('ai_undo_change_'));
+}
+
 export function useChatEngine() {
   const { t, lang } = useI18n();
   const tt = useCallback((k: string) => EXTRA[k]?.[lang] ?? t(k), [lang, t]);
@@ -165,6 +173,7 @@ export function useChatEngine() {
     remotePacks: cloudChatPacks,
     remotePacksEntities: cloudChatPacksEntities,
     remoteSessions: cloudChatSessions,
+    remoteUndoSnapshots: cloudUndoSnapshots,
     remoteRev: cloudChatRev,
     save: saveCloudChat,
     clear: clearCloudChat,
@@ -198,9 +207,9 @@ export function useChatEngine() {
   const promptReadDescriptionsRef = useRef<string[]>([]);
   const promptReadBreakdownRef = useRef<Record<string, number>>({});
   const pendingRef = useRef<Map<string, PendingEntry>>(new Map());
-  // Pre-change snapshots so a confirmed AI change can be undone while the chat
-  // stays open (mirrors AppController._undoSnapshots).
-  const undoSnapshotsRef = useRef<Map<string, CloudAppState>>(new Map());
+  // Pre-change snapshots so a confirmed AI change can be undone after leaving
+  // and returning to the chat. Snapshots are synced with the active chat doc.
+  const undoSnapshotsRef = useRef<Map<string, string>>(new Map());
   const hydratedRef = useRef(false);
   // Set right before we replace local messages with a remote snapshot, so the
   // save-on-change effect doesn't immediately echo that snapshot back.
@@ -208,6 +217,29 @@ export function useChatEngine() {
   // Mirror of `messages` for use inside effects without re-subscribing them.
   const messagesRef = useRef<LocalChatMessage[]>([]);
   const revealTimerRef = useRef<number | null>(null);
+
+  const serializedUndoSnapshots = useCallback((): CloudUndoSnapshots => {
+    const out: CloudUndoSnapshots = {};
+    for (const [key, snapshotJson] of undoSnapshotsRef.current.entries()) {
+      out[key] = snapshotJson;
+    }
+    return out;
+  }, []);
+
+  const liveUndoKeyForMessage = useCallback((message: LocalChatMessage, index: number, all: LocalChatMessage[]): string | undefined => {
+    const key = undoKeyFromMessage(message);
+    if (!key || !undoSnapshotsRef.current.has(key)) return undefined;
+    return all.length - index - 1 <= UNDO_MESSAGE_WINDOW ? key : undefined;
+  }, []);
+
+  const messagesWithLiveUndo = useCallback(
+    (items: LocalChatMessage[]) =>
+      items.map((message, index, all) => ({
+        ...message,
+        undoKey: liveUndoKeyForMessage(message, index, all),
+      })),
+    [liveUndoKeyForMessage],
+  );
 
   // Single write-path for the model context: keeps the ref and the estimated
   // token counter in sync so the 16K memory gate is always accurate.
@@ -247,6 +279,7 @@ export function useChatEngine() {
     promptReadDescriptionsRef.current = [];
     promptReadBreakdownRef.current = {};
     pendingRef.current = new Map();
+    undoSnapshotsRef.current = new Map();
     setOutOfCredits(false);
     setAiContext([{ role: 'assistant', content: greeting }]);
     setMessages([
@@ -268,6 +301,7 @@ export function useChatEngine() {
   // CHARGED — the conversation paid when the packs first loaded.
   const restoreFromCloud = useCallback((stored: CloudChatMessage[], hint?: { packs?: string[]; entities?: boolean }) => {
     clearReveal();
+    undoSnapshotsRef.current = new Map(Object.entries(cloudUndoSnapshots));
     const seeded = new Set<ChatPromptPack>();
     for (const p of hint?.packs ?? []) {
       if ((PACK_ORDER as string[]).includes(p)) seeded.add(p as ChatPromptPack);
@@ -296,16 +330,16 @@ export function useChatEngine() {
       stored.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })),
       contextTokenAdjustmentForMessages(stored),
     );
-    setMessages(
-      stored.map((m) => ({
+    const restored = stored.map((m) => ({
         id: genId(),
         fromUser: m.fromUser,
         text: m.text,
+        actionKeys: m.actionKeys,
         inputTokens: m.inputTokens ?? null,
         tokenUsage: m.tokenUsage ?? null,
-      })),
-    );
-  }, [clearReveal, setAiContext]);
+      }));
+    setMessages(messagesWithLiveUndo(restored));
+  }, [clearReveal, cloudUndoSnapshots, messagesWithLiveUndo, setAiContext]);
 
   // First mount: wait for the cloud snapshot, then either restore the synced
   // conversation or open with a local greeting — no model call either way.
@@ -331,8 +365,8 @@ export function useChatEngine() {
       suppressSaveRef.current = false;
       return;
     }
-    saveCloudChat(toCloudChat(messages), [...loadedPacksRef.current], entitiesNeededRef.current);
-  }, [messages, saveCloudChat]);
+    saveCloudChat(toCloudChat(messages), [...loadedPacksRef.current], entitiesNeededRef.current, serializedUndoSnapshots());
+  }, [messages, saveCloudChat, serializedUndoSnapshots]);
 
   // Realtime pull: when another device changes the conversation, adopt it —
   // unless we're mid-generation, or it's just our own write echoing back.
@@ -747,15 +781,15 @@ export function useChatEngine() {
       // Snapshot the data *before* applying so the change can be undone later.
       const snapshot = data.snapshotState();
       const summary = applyMutationActions(entry.actions, data, t);
-      const undoKey = genId();
-      undoSnapshotsRef.current.set(undoKey, snapshot);
+      const undoKey = `ai_undo_change_${genId()}`;
+      undoSnapshotsRef.current.set(undoKey, JSON.stringify(snapshot));
       // The model keeps seeing the (now updated) app data on later turns, but
       // the conversation already paid for the app-data read — don't re-charge.
       entitiesNeededRef.current = true;
       appendAiContextTurn({ role: 'assistant', content: summary });
       setMessages((prev) => [
         ...prev.map((m) => (m.id === id && m.pending ? { ...m, pending: { ...m.pending, resolved: 'approved' as const } } : m)),
-        { id: genId(), fromUser: false, text: summary, undoKey },
+        { id: genId(), fromUser: false, text: summary, actionKeys: [undoKey], undoKey },
       ]);
     },
     [data, appendAiContextTurn, t],
@@ -763,15 +797,19 @@ export function useChatEngine() {
 
   const undoChange = useCallback(
     (undoKey: string) => {
-      const snapshot = undoSnapshotsRef.current.get(undoKey);
-      if (!snapshot) return;
+      const snapshotJson = undoSnapshotsRef.current.get(undoKey);
+      if (!snapshotJson) return;
       undoSnapshotsRef.current.delete(undoKey);
-      data.restoreState(snapshot);
+      data.restoreState(JSON.parse(snapshotJson) as CloudAppState);
       const text = t('chat_change_undone');
       appendAiContextTurn({ role: 'assistant', content: text });
       setMessages((prev) => [
         // Drop the undo affordance from the confirmation bubble, then confirm.
-        ...prev.map((m) => (m.undoKey === undoKey ? { ...m, undoKey: undefined } : m)),
+        ...prev.map((m) =>
+          undoKeyFromMessage(m) === undoKey
+            ? { ...m, actionKeys: (m.actionKeys ?? []).filter((key) => key !== undoKey), undoKey: undefined }
+            : m,
+        ),
         { id: genId(), fromUser: false, text },
       ]);
     },
@@ -910,10 +948,11 @@ export function useChatEngine() {
 
   const quotaRemaining = data.tokenQuota?.remainingTokens ?? null;
   const noCredits = outOfCredits || (quotaRemaining != null && quotaRemaining <= 0);
+  const visibleMessages = useMemo(() => messagesWithLiveUndo(messages), [messages, messagesWithLiveUndo]);
 
   return useMemo(
     () => ({
-      messages,
+      messages: visibleMessages,
       typing,
       typingStatus,
       streamingText,
@@ -941,6 +980,6 @@ export function useChatEngine() {
       memoryFull,
       tt,
     }),
-    [messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
+    [visibleMessages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
   );
 }

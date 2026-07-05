@@ -12,7 +12,7 @@ import { BottomSheet } from '../components/chat/BottomSheet';
 import { TaskPickerSheet } from '../components/chat/TaskPickerSheet';
 import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TrashIcon } from '../components/chat/icons';
 import { ProgressRing } from '../components/focus/ProgressRing';
-import { reasoningEmoji } from '../state/types';
+import { reasoningEmoji, type ChatModelFamily } from '../state/types';
 
 const REASONING_LABEL_KEY = {
   cheap: 'reasoning_cheap',
@@ -51,6 +51,7 @@ export default function Chat() {
   const [showHistory, setShowHistory] = useState(false);
   const [showTaskPicker, setShowTaskPicker] = useState(false);
   const [showMemoryDetails, setShowMemoryDetails] = useState(false);
+  const [pendingModelFamily, setPendingModelFamily] = useState<ChatModelFamily | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
@@ -82,6 +83,24 @@ export default function Chat() {
   const saveRename = () => {
     setAgentName(renameValue);
     setRenaming(false);
+  };
+
+  const hasStartedConversation = messages.some((m) => m.fromUser && m.text.trim().length > 0);
+  const requestModelFamily = (family: ChatModelFamily) => {
+    if (family === modelFamily) return;
+    if (!hasStartedConversation) {
+      setModelFamily(family);
+      return;
+    }
+    setShowEffortSheet(false);
+    setPendingModelFamily(family);
+  };
+  const confirmModelFamilySwitch = () => {
+    if (!pendingModelFamily) return;
+    setModelFamily(pendingModelFamily);
+    newChat();
+    setPendingModelFamily(null);
+    setShowEffortSheet(false);
   };
 
   // Conversation-memory meter: fills as context is used, while the center shows
@@ -462,10 +481,35 @@ export default function Chat() {
           modelFamily={modelFamily}
           geminiPro={geminiPro}
           onSelect={setEffort}
-          onSelectModelFamily={setModelFamily}
+          onSelectModelFamily={requestModelFamily}
           onSelectGeminiPro={setGeminiPro}
           onClose={() => setShowEffortSheet(false)}
         />
+      )}
+
+      {pendingModelFamily && (
+        <BottomSheet tokens={tokens} onClose={() => setPendingModelFamily(null)}>
+          <h2 className="text-lg font-extrabold mb-2">{t('chat_model_switch_title')}</h2>
+          <p className="text-sm mb-4" style={{ color: tokens.textDim }}>
+            {t('chat_model_switch_body')}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={confirmModelFamilySwitch}
+              className="flex-1 h-11 rounded-[var(--sf-radius-sm)] font-extrabold sf-press"
+              style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent }}
+            >
+              {t('chat_model_switch_confirm')}
+            </button>
+            <button
+              onClick={() => setPendingModelFamily(null)}
+              className="flex-1 h-11 rounded-[var(--sf-radius-sm)] font-extrabold sf-press"
+              style={{ background: tokens.surface, color: tokens.text, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}` }}
+            >
+              {t('chat_model_switch_cancel')}
+            </button>
+          </div>
+        </BottomSheet>
       )}
 
       {showTaskPicker && <TaskPickerSheet tokens={tokens} onAttach={attachTasks} onClose={() => setShowTaskPicker(false)} />}
