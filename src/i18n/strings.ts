@@ -561,9 +561,11 @@ export const translations: Record<string, Record<string, string>> = {
   },
   'reasoning_max': { 'he': 'מקסימלי', 'en': 'Maximum' },
   'reasoning_max_hint': {
-    'he': 'המודל החזק ביותר (Gemma) עם החשיבה העמוקה ביותר — הכי יקר',
-    'en': 'The strongest model (Gemma) with the deepest thinking — the priciest tier',
+    'he': 'עומק החשיבה הגבוה ביותר למשימות הכי מורכבות',
+    'en': 'The highest reasoning depth for the hardest tasks',
   },
+  'chat_model_deepseek': { 'he': 'מודלי DeepSeek', 'en': 'DeepSeek models' },
+  'chat_model_gpt': { 'he': 'מודלי GPT', 'en': 'GPT models' },
 
   // --- chat: Pro mode (premium models) ---
   'chat_pro_activate': { 'he': 'הפעל פרו', 'en': 'Go Pro' },
@@ -571,6 +573,10 @@ export const translations: Record<string, Record<string, string>> = {
   'chat_pro_desc': {
     'he': 'מודלים חזקים במיוחד — איכות מקסימלית במחיר גבוה יותר',
     'en': 'Extra-powerful models — top quality at a higher rate',
+  },
+  'chat_gpt_desc': {
+    'he': 'GPT-5.4 mini עם כל רמות החשיבה — עולה פי 2.5',
+    'en': 'GPT-5.4 mini with every reasoning depth — costs 2.5x',
   },
   'reasoning_pro_smart': { 'he': 'חכם', 'en': 'Smart' },
   'reasoning_pro_smart_hint': {
@@ -587,12 +593,6 @@ export const translations: Record<string, Record<string, string>> = {
     'he': 'DeepSeek V4 Pro בחשיבה המקסימלית — למשימות הכי מורכבות',
     'en': 'DeepSeek V4 Pro at maximum reasoning — for the hardest tasks',
   },
-  'reasoning_pro_max': { 'he': 'אולטרה', 'en': 'Ultra' },
-  'reasoning_pro_max_hint': {
-    'he': 'Gemma 4 31B — המודל החזק ביותר שיש, חשיבה עמוקה',
-    'en': 'Gemma 4 31B — the strongest model available, deep thinking',
-  },
-
   // --- chat: chat credits & history ---
   'chat_tokens': { 'he': '{count} קרדיטי שיחה', 'en': '{count} chat credits' },
   'chat_tokens_info_title': { 'he': 'פירוט קרדיטי שיחה', 'en': 'Chat credit breakdown' },

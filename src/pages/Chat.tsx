@@ -24,7 +24,6 @@ const REASONING_LABEL_KEY = {
   proSmart: 'reasoning_pro_smart',
   proDeep: 'reasoning_pro_deep',
   proExpert: 'reasoning_pro_expert',
-  proMax: 'reasoning_pro_max',
 } as const;
 
 function fmtTokens(n: number): string {
@@ -42,7 +41,7 @@ export default function Chat() {
   const navigate = useNavigate();
 
   const {
-    messages, typing, typingStatus, streamingText, effort, setEffort, sendText, attachTasks,
+    messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, sendText, attachTasks,
     confirmPending, rejectPending, undoChange, newChat, summarizeChat, sessions, restoreSession, deleteSession,
     agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt,
   } = useChatEngine();
@@ -456,7 +455,16 @@ export default function Chat() {
         )}
       </div>
 
-      {showEffortSheet && <ReasoningSheet tokens={tokens} current={effort} onSelect={setEffort} onClose={() => setShowEffortSheet(false)} />}
+      {showEffortSheet && (
+        <ReasoningSheet
+          tokens={tokens}
+          current={effort}
+          modelFamily={modelFamily}
+          onSelect={setEffort}
+          onSelectModelFamily={setModelFamily}
+          onClose={() => setShowEffortSheet(false)}
+        />
+      )}
 
       {showTaskPicker && <TaskPickerSheet tokens={tokens} onAttach={attachTasks} onClose={() => setShowTaskPicker(false)} />}
 

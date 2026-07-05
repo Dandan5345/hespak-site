@@ -4,7 +4,7 @@ import { promptPackInstruction, summarizeChatInstruction, systemPrompt, type Cha
 import { useAuth } from '../../state/AuthContext';
 import { useData } from '../../state/DataContext';
 import { useI18n } from '../../i18n/I18nProvider';
-import { genId, isProEffort, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
+import { genId, isProEffort, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatModelFamily, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
 import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIntent } from './keywordIntents';
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
@@ -70,11 +70,17 @@ export const CONTEXT_TOKEN_LIMIT = 16000;
 export const PRO_CONTEXT_TOKEN_LIMIT = 32000;
 
 const REASONING_KEY = 'sf_reasoning';
-const VALID_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max', 'proSmart', 'proDeep', 'proExpert', 'proMax'];
+const MODEL_FAMILY_KEY = 'sf_model_family';
+const VALID_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max', 'proSmart', 'proDeep', 'proExpert'];
 
 function readEffort(): ReasoningEffort {
   const v = localStorage.getItem(REASONING_KEY);
+  if (v === 'proMax') return 'proExpert';
   return (VALID_EFFORTS as string[]).includes(v ?? '') ? (v as ReasoningEffort) : 'medium';
+}
+
+function readModelFamily(): ChatModelFamily {
+  return localStorage.getItem(MODEL_FAMILY_KEY) === 'gpt' ? 'gpt' : 'deepseek';
 }
 
 const EXTRA: Record<string, Record<string, string>> = {
@@ -171,6 +177,7 @@ export function useChatEngine() {
   const [streamingText, setStreamingText] = useState<string | null>(null);
   const [outOfCredits, setOutOfCredits] = useState(false);
   const [effort, setEffortState] = useState<ReasoningEffort>(readEffort);
+  const [modelFamily, setModelFamilyState] = useState<ChatModelFamily>(readModelFamily);
 
   const aiContextRef = useRef<ChatTurn[]>([]);
   const loadedPacksRef = useRef<Set<ChatPromptPack>>(new Set());
@@ -354,6 +361,24 @@ export function useChatEngine() {
     localStorage.setItem(REASONING_KEY, e);
   }, []);
 
+  const setModelFamily = useCallback((family: ChatModelFamily) => {
+    setModelFamilyState(family);
+    localStorage.setItem(MODEL_FAMILY_KEY, family);
+    if (family === 'gpt') {
+      setEffortState((prev) => {
+        const next = prev === 'cheap' || isProEffort(prev) ? 'minimal' : prev;
+        if (next !== prev) localStorage.setItem(REASONING_KEY, next);
+        return next;
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (modelFamily !== 'gpt') return;
+    if (effort !== 'cheap' && !isProEffort(effort)) return;
+    setEffort('minimal');
+  }, [effort, modelFamily, setEffort]);
+
   const promptReadDescription = useCallback(
     (pack: ChatPromptPack) => {
       switch (pack) {
@@ -515,7 +540,7 @@ export function useChatEngine() {
 
   const applyHistoryDiscount = useCallback(
     (raw: ChatTokenUsage, currentEffort: ReasoningEffort): ChatTokenUsage => {
-      const multiplier = reasoningCostMultiplier(currentEffort);
+      const multiplier = reasoningCostMultiplier(currentEffort, modelFamily);
       const estimatedSystem = estimateSystemInstructionTokens();
       const historyTokens = Math.min(Math.max(0, raw.promptTokens - estimatedSystem), raw.promptTokens);
       const systemAndOutput = estimatedSystem + raw.completionTokens;
@@ -528,7 +553,7 @@ export function useChatEngine() {
         chargedTokens,
       };
     },
-    [estimateSystemInstructionTokens],
+    [estimateSystemInstructionTokens, modelFamily],
   );
 
   const applyAuthoritativeCharge = useCallback((usage: ChatTokenUsage, charged?: number): ChatTokenUsage => {
@@ -562,7 +587,7 @@ export function useChatEngine() {
           const turns = buildMessages();
           const result = await completeChat(turns, {
             reasoningEffort: reasoningApiValue(currentEffort),
-            provider: reasoningProvider(currentEffort),
+            provider: reasoningProvider(currentEffort, modelFamily),
             idToken: await idToken(),
             displayName,
           });
@@ -648,7 +673,7 @@ export function useChatEngine() {
         setTypingStatus(null);
       }
     },
-    [addPromptReadContext, appendAiContextTurn, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, pushAiMessage, revealReply, t, tt],
+    [addPromptReadContext, appendAiContextTurn, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, modelFamily, pushAiMessage, revealReply, t, tt],
   );
 
   // Pro tiers get double the conversation memory.
@@ -795,7 +820,7 @@ export function useChatEngine() {
         [...aiContextRef.current, { role: 'user', content: summarizeChatInstruction }],
         {
           reasoningEffort: reasoningApiValue(effort),
-          provider: reasoningProvider(effort),
+          provider: reasoningProvider(effort, modelFamily),
           idToken: await idToken(),
           displayName,
         },
@@ -835,7 +860,7 @@ export function useChatEngine() {
       setTyping(false);
       setTypingStatus(null);
     }
-  }, [typing, summarizing, effort, idToken, displayName, data, applyAuthoritativeCharge, applyHistoryDiscount, saveCloudSessions, archiveCurrent, setAiContext, pushAiMessage, t, tt]);
+  }, [typing, summarizing, effort, modelFamily, idToken, displayName, data, applyAuthoritativeCharge, applyHistoryDiscount, saveCloudSessions, archiveCurrent, setAiContext, pushAiMessage, t, tt]);
 
   // Restore a saved session into the active conversation, archiving whatever is
   // open now (mirrors the app's restoreSession).
@@ -877,6 +902,8 @@ export function useChatEngine() {
       streamingText,
       effort,
       setEffort,
+      modelFamily,
+      setModelFamily,
       sendText,
       attachTasks,
       confirmPending,
@@ -895,6 +922,6 @@ export function useChatEngine() {
       memoryFull,
       tt,
     }),
-    [messages, typing, typingStatus, streamingText, effort, setEffort, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
+    [messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
   );
 }

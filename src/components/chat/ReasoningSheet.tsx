@@ -1,16 +1,15 @@
 import { useState } from 'react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { SfTokens } from '../../theme/tokens';
-import { isProEffort, reasoningCostBadge, reasoningEmoji, type ReasoningEffort } from '../../state/types';
+import { isProEffort, reasoningCostBadge, reasoningEmoji, type ChatModelFamily, type ReasoningEffort } from '../../state/types';
 import { BottomSheet } from './BottomSheet';
 
-// Cheapest/fastest → priciest/deepest. Mirror of ReasoningEffort.values order
+// Cheapest/fastest → deepest. Mirror of ReasoningEffort.values order
 // in the app's lib/state/models.dart.
 const NORMAL_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max'];
-// Pro mode ("הפעל פרו"): three thinking levels on the DeepSeek pro model
-// (×2.5) + the top OpenRouter pro model (×3).
+const GPT_EFFORTS: ReasoningEffort[] = ['minimal', 'medium', 'high', 'expert', 'max'];
+// Pro mode ("הפעל פרו"): three thinking levels on the DeepSeek pro model (×2.5).
 const PRO_DEEPSEEK_EFFORTS: ReasoningEffort[] = ['proSmart', 'proDeep', 'proExpert'];
-const PRO_OPENROUTER_EFFORTS: ReasoningEffort[] = ['proMax'];
 
 const LABEL_KEY: Record<ReasoningEffort, string> = {
   cheap: 'reasoning_cheap',
@@ -22,7 +21,6 @@ const LABEL_KEY: Record<ReasoningEffort, string> = {
   proSmart: 'reasoning_pro_smart',
   proDeep: 'reasoning_pro_deep',
   proExpert: 'reasoning_pro_expert',
-  proMax: 'reasoning_pro_max',
 };
 const HINT_KEY: Record<ReasoningEffort, string> = {
   cheap: 'reasoning_cheap_hint',
@@ -34,29 +32,32 @@ const HINT_KEY: Record<ReasoningEffort, string> = {
   proSmart: 'reasoning_pro_smart_hint',
   proDeep: 'reasoning_pro_deep_hint',
   proExpert: 'reasoning_pro_expert_hint',
-  proMax: 'reasoning_pro_max_hint',
 };
 
 interface Props {
   tokens: SfTokens;
   current: ReasoningEffort;
+  modelFamily: ChatModelFamily;
   onSelect: (e: ReasoningEffort) => void;
+  onSelectModelFamily: (family: ChatModelFamily) => void;
   onClose: () => void;
 }
 
 function EffortRow({
   effort,
   selected,
+  family,
   tokens,
   onPick,
 }: {
   effort: ReasoningEffort;
   selected: boolean;
+  family: ChatModelFamily;
   tokens: SfTokens;
   onPick: (e: ReasoningEffort) => void;
 }) {
   const { t } = useI18n();
-  const badge = reasoningCostBadge(effort);
+  const badge = reasoningCostBadge(effort, family);
   return (
     <button
       onClick={() => onPick(effort)}
@@ -91,15 +92,20 @@ function EffortRow({
 }
 
 /** Bottom-sheet-style picker for the chat model + reasoning depth, mirrors
- * _showEffortPicker in chat_screen.dart. The "הפעל פרו" toggle switches the
- * list to the pro models (DeepSeek V4 Pro ×2.5 / Gemma 4 31B ×3). */
-export function ReasoningSheet({ tokens, current, onSelect, onClose }: Props) {
+ * _showEffortPicker in chat_screen.dart. The top switch chooses DeepSeek/Mistral
+ * vs GPT; DeepSeek still has its Pro toggle. */
+export function ReasoningSheet({ tokens, current, modelFamily, onSelect, onSelectModelFamily, onClose }: Props) {
   const { t } = useI18n();
-  const [pro, setPro] = useState(isProEffort(current));
+  const [pro, setPro] = useState(modelFamily === 'deepseek' && isProEffort(current));
 
   const pick = (e: ReasoningEffort) => {
     onSelect(e);
     onClose();
+  };
+
+  const switchFamily = (family: ChatModelFamily) => {
+    onSelectModelFamily(family);
+    if (family === 'gpt') setPro(false);
   };
 
   const sectionLabel = (text: string) => (
@@ -114,40 +120,73 @@ export function ReasoningSheet({ tokens, current, onSelect, onClose }: Props) {
         <div>
           <h2 className="text-lg font-extrabold">{t('chat_thinking_title')}</h2>
           <p className="text-sm" style={{ color: tokens.textDim }}>
-            {pro ? t('chat_pro_desc') : t('chat_thinking_desc')}
+            {modelFamily === 'gpt'
+              ? t('chat_gpt_desc')
+              : pro
+                ? t('chat_pro_desc')
+                : t('chat_thinking_desc')}
           </p>
         </div>
-        {/* Pro toggle — the model lists below swap when it's on. */}
-        <button
-          onClick={() => setPro(!pro)}
-          className="shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-extrabold"
-          style={
-            pro
-              ? { background: 'var(--sf-accent-gradient)', color: tokens.onAccent, border: 'none' }
-              : { background: tokens.surface, color: tokens.text, border: `1px solid ${tokens.navBorderColor}` }
-          }
-        >
-          <span>💎</span>
-          <span>{pro ? t('chat_pro_on') : t('chat_pro_activate')}</span>
-        </button>
+        {modelFamily === 'deepseek' && (
+          <button
+            onClick={() => setPro(!pro)}
+            className="shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-2 text-[13px] font-extrabold"
+            style={
+              pro
+                ? { background: 'var(--sf-accent-gradient)', color: tokens.onAccent, border: 'none' }
+                : { background: tokens.surface, color: tokens.text, border: `1px solid ${tokens.navBorderColor}` }
+            }
+          >
+            <span>💎</span>
+            <span>{pro ? t('chat_pro_on') : t('chat_pro_activate')}</span>
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 mt-4">
+        {(['deepseek', 'gpt'] as ChatModelFamily[]).map((family) => {
+          const selected = modelFamily === family;
+          return (
+            <button
+              key={family}
+              type="button"
+              onClick={() => switchFamily(family)}
+              className="h-10 rounded-full text-[13px] font-extrabold sf-press"
+              style={{
+                background: selected ? 'var(--sf-accent-gradient)' : tokens.surface,
+                color: selected ? tokens.onAccent : tokens.text,
+                border: selected ? 'none' : `1px solid ${tokens.navBorderColor}`,
+                boxShadow: selected && tokens.glow !== 'none' ? tokens.glow : undefined,
+              }}
+            >
+              {t(family === 'deepseek' ? 'chat_model_deepseek' : 'chat_model_gpt')}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-col gap-2 mt-3">
-        {pro ? (
+        {modelFamily === 'gpt' ? (
+          <>
+            {sectionLabel('GPT-5.4 mini · ×2.5')}
+            {GPT_EFFORTS.map((e) => (
+              <EffortRow key={e} effort={e} family="gpt" selected={e === current} tokens={tokens} onPick={pick} />
+            ))}
+          </>
+        ) : pro ? (
           <>
             {sectionLabel('DeepSeek V4 Pro · ×2.5')}
             {PRO_DEEPSEEK_EFFORTS.map((e) => (
-              <EffortRow key={e} effort={e} selected={e === current} tokens={tokens} onPick={pick} />
-            ))}
-            {sectionLabel('Gemma 4 31B · ×3')}
-            {PRO_OPENROUTER_EFFORTS.map((e) => (
-              <EffortRow key={e} effort={e} selected={e === current} tokens={tokens} onPick={pick} />
+              <EffortRow key={e} effort={e} family="deepseek" selected={e === current} tokens={tokens} onPick={pick} />
             ))}
           </>
         ) : (
-          NORMAL_EFFORTS.map((e) => (
-            <EffortRow key={e} effort={e} selected={e === current} tokens={tokens} onPick={pick} />
-          ))
+          <>
+            {sectionLabel('Mistral + DeepSeek')}
+            {NORMAL_EFFORTS.map((e) => (
+              <EffortRow key={e} effort={e} family="deepseek" selected={e === current} tokens={tokens} onPick={pick} />
+            ))}
+          </>
         )}
       </div>
     </BottomSheet>

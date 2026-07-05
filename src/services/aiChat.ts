@@ -19,8 +19,8 @@ export class QuotaExhaustedError extends Error {
   }
 }
 
-// Same Cloudflare worker the mobile app talks to — same DeepSeek/OpenRouter
-// backend, same per-user token quota (keyed by Firebase uid).
+// Same Cloudflare worker the mobile app talks to — same DeepSeek/Mistral/GPT
+// backends, same per-user token quota (keyed by Firebase uid).
 const CHAT_ENDPOINT = 'https://studyflow-ai.nakachedoron37.workers.dev/chat';
 
 function parseUsage(raw: Record<string, unknown> | undefined): ChatTokenUsage | undefined {
