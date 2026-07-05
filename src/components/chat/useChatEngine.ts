@@ -118,7 +118,10 @@ function estimateTokens(text: string): number {
 
 function aiOutputContextTokens(text: string, usage?: ChatTokenUsage | null): number {
   const estimated = estimateTokens(text);
-  return usage ? Math.max(estimated, usage.completionTokens) : estimated;
+  const visibleOutput = usage
+    ? Math.max(0, usage.completionTokens - (usage.reasoningTokens ?? 0))
+    : null;
+  return visibleOutput != null ? Math.max(estimated, visibleOutput) : estimated;
 }
 
 function messageContextTokens(message: {
@@ -688,9 +691,9 @@ export function useChatEngine() {
     [addPromptReadContext, appendAiContextTurn, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, geminiPro, idToken, lang, modelFamily, pushAiMessage, revealReply, t, tt],
   );
 
-  // Pro tiers get double the conversation memory.
+  // GPT/Gemini and Pro tiers get double the conversation memory.
   const contextLimit =
-    isProEffort(effort) || (modelFamily === 'gemini' && geminiPro)
+    isProEffort(effort) || modelFamily === 'gpt' || modelFamily === 'gemini'
       ? PRO_CONTEXT_TOKEN_LIMIT
       : CONTEXT_TOKEN_LIMIT;
   const memoryFull = contextTokens >= contextLimit;
@@ -860,7 +863,6 @@ export function useChatEngine() {
       const compacted = [summaryMessage, ...keep];
       setAiContext(
         compacted.map((m) => ({ role: m.fromUser ? 'user' : 'assistant', content: m.text })),
-        contextTokenAdjustmentForMessages(compacted),
       );
       setMessages(compacted);
     } catch (e) {
