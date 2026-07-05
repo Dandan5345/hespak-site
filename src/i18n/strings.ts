@@ -616,16 +616,20 @@ export const translations: Record<string, Record<string, string>> = {
   },
   'chat_tokens_output_total': { 'he': 'סה״כ פלט', 'en': 'Total output chat credits' },
   'chat_tokens_instruction_context': {
-    'he': 'קרדיטי הוראות/קונטקסט עבור {item}',
-    'en': 'Instruction/context input chat credits for {item}',
+    'he': 'קרדיטי הוראות/מידע רקע עבור {item}',
+    'en': 'Instruction/background input chat credits for {item}',
   },
   'chat_tokens_total': { 'he': 'סה״כ קרדיטי שיחה', 'en': 'Total chat credits' },
   'chat_memory_label': { 'he': 'זיכרון שיחה', 'en': 'Chat memory' },
-  'chat_context_title': { 'he': 'קונטקסט', 'en': 'Context' },
+  'chat_context_title': { 'he': 'זיכרון שיחה', 'en': 'Chat memory' },
   'chat_context_left_short': { 'he': 'נשאר', 'en': 'left' },
   'chat_context_remaining': {
-    'he': 'נשאר {percent}% · {used} מתוך {limit} טוקנים',
-    'en': '{percent}% left · {used} of {limit} tokens',
+    'he': 'נשאר {percent}% · {used} מתוך {limit} טוקנים בזיכרון השיחה',
+    'en': '{percent}% left · {used} of {limit} chat-memory tokens',
+  },
+  'chat_memory_explain': {
+    'he': 'זה המקום שנשאר ל-AI לזכור את ההודעות בשיחה הזאת. כשהוא מתמלא, אפשר לסכם את השיחה ולפנות מקום להמשך.',
+    'en': 'This is how much room the AI has left to remember this conversation. When it fills up, summarize the chat to free room for more messages.',
   },
   'chat_context_warning': {
     'he': 'מעל 70% שימוש — אפשר לסכם ולפנות מקום.',

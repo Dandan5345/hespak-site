@@ -51,6 +51,7 @@ export default function Chat() {
   const [showEffortSheet, setShowEffortSheet] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showTaskPicker, setShowTaskPicker] = useState(false);
+  const [showMemoryDetails, setShowMemoryDetails] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
@@ -104,7 +105,7 @@ export default function Chat() {
     <div className="flex flex-col" style={{ height: 'calc(100dvh - 8.5rem)', minHeight: 420 }}>
       {/* header */}
       <div
-        className="rounded-t-[var(--sf-radius-lg)] overflow-hidden"
+        className="rounded-t-[var(--sf-radius-lg)] overflow-visible"
         style={{ background: 'var(--sf-nav-bg)', border: `var(--sf-nav-border-width) solid var(--sf-nav-border-color)`, borderBottom: 'none' }}
       >
         <div className="flex items-center gap-3 px-3 pt-3 pb-2.5">
@@ -155,6 +156,100 @@ export default function Chat() {
               </span>
             )}
           </button>
+          <div className="relative hidden sm:block shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowMemoryDetails((v) => !v)}
+              aria-expanded={showMemoryDetails}
+              aria-label={t('chat_memory_label')}
+              title={`${t('chat_memory_label')}: ${fmtTokens(contextTokens)} / ${fmtTokens(contextLimit)}`}
+              className="w-9 h-9 rounded-full flex items-center justify-center sf-press"
+              style={{
+                background: tokens.surface,
+                border: `${tokens.cardBorderWidth}px solid ${memNeedsAttention ? `${memColor}88` : tokens.cardBorderColor}`,
+                boxShadow: memShadow,
+              }}
+            >
+              <ProgressRing
+                size={28}
+                stroke={3}
+                progress={memPct / 100}
+                track={tokens.ringTrack}
+                colorStart={memColor}
+                colorEnd={memColorEnd}
+                glow={memShadow}
+              >
+                <span className="text-[8px] font-black leading-none" style={{ color: memColor }}>
+                  {memRemainingPct}%
+                </span>
+              </ProgressRing>
+            </button>
+            {showMemoryDetails && (
+              <div
+                className="absolute z-30 mt-2 w-[286px] rounded-[var(--sf-radius-sm)] p-3 text-start"
+                style={{
+                  insetInlineEnd: 0,
+                  background: tokens.surface,
+                  border: `${tokens.cardBorderWidth}px solid ${memNeedsAttention ? `${memColor}66` : tokens.cardBorderColor}`,
+                  boxShadow: memNeedsAttention ? `0 18px 42px -18px ${memColor}` : tokens.cardShadow,
+                  color: tokens.text,
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <ProgressRing
+                    size={42}
+                    stroke={5}
+                    progress={memPct / 100}
+                    track={tokens.ringTrack}
+                    colorStart={memColor}
+                    colorEnd={memColorEnd}
+                    glow={memShadow}
+                  >
+                    <span className="text-[10px] font-black leading-none" style={{ color: memColor }}>
+                      {memRemainingPct}%
+                    </span>
+                  </ProgressRing>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-black" style={{ color: tokens.text }}>
+                      {t('chat_memory_label')}
+                    </div>
+                    <div className="mt-0.5 text-[11px] font-semibold" style={{ color: tokens.textDim }}>
+                      {t('chat_context_remaining')
+                        .replace('{percent}', `${memRemainingPct}`)
+                        .replace('{used}', fmtTokens(contextTokens))
+                        .replace('{limit}', fmtTokens(contextLimit))}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-2 text-[11px] leading-relaxed font-medium" style={{ color: tokens.textDim }}>
+                  {t('chat_memory_explain')}
+                </div>
+                {memNeedsAttention && !memoryFull && (
+                  <div className="mt-2">
+                    <div className="mb-2 text-[11px] font-bold" style={{ color: memColor }}>
+                      {t(memCritical ? 'chat_context_critical' : 'chat_context_warning')}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowMemoryDetails(false);
+                        void summarizeChat();
+                      }}
+                      disabled={typing}
+                      className="h-8 w-full rounded-full text-[11px] font-black sf-press disabled:opacity-50"
+                      style={{
+                        background: memCritical ? '#EF4444' : memColor,
+                        color: '#FFFFFF',
+                        boxShadow: memShadow,
+                      }}
+                    >
+                      {t('chat_memory_summarize_now')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <button
             onClick={() => setShowEffortSheet(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-extrabold shrink-0 sf-press"
@@ -164,7 +259,7 @@ export default function Chat() {
             <span className="hidden sm:inline">{t(REASONING_LABEL_KEY[effort])}</span>
           </button>
         </div>
-        <div className="px-3 pb-3">
+        <div className="px-3 pb-3 sm:hidden">
           <div
             className="flex items-center gap-3 rounded-[var(--sf-radius-sm)] px-3 py-2"
             title={`${t('chat_memory_label')}: ${fmtTokens(contextTokens)} / ${fmtTokens(contextLimit)}`}
