@@ -20,6 +20,10 @@ const REASONING_LABEL_KEY = {
   high: 'reasoning_high',
   expert: 'reasoning_expert',
   max: 'reasoning_max',
+  proSmart: 'reasoning_pro_smart',
+  proDeep: 'reasoning_pro_deep',
+  proExpert: 'reasoning_pro_expert',
+  proMax: 'reasoning_pro_max',
 } as const;
 
 function fmtTokens(n: number): string {

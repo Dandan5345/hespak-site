@@ -122,38 +122,73 @@ export interface TokenQuota {
   displayName?: string | null;
 }
 
-// Six levels ordered cheapest/fastest → priciest/deepest. Mirror of
+// Six normal levels ordered cheapest/fastest → priciest/deepest, plus the
+// four Pro-mode tiers ("הפעל פרו"): three thinking levels on the DeepSeek pro
+// model (×2.5) and one top OpenRouter pro model (×3). Mirror of
 // `ReasoningEffort` in the app's lib/state/models.dart and of the `DEPTH`
 // table in ai-worker/src/index.ts — keep all three in sync.
-export type ReasoningEffort = 'cheap' | 'minimal' | 'medium' | 'high' | 'expert' | 'max';
+export type ReasoningEffort =
+  | 'cheap'
+  | 'minimal'
+  | 'medium'
+  | 'high'
+  | 'expert'
+  | 'max'
+  | 'proSmart'
+  | 'proDeep'
+  | 'proExpert'
+  | 'proMax';
+
+export const PRO_EFFORTS: ReasoningEffort[] = ['proSmart', 'proDeep', 'proExpert', 'proMax'];
+
+export function isProEffort(effort: ReasoningEffort): boolean {
+  return PRO_EFFORTS.includes(effort);
+}
 
 /** Value for the `reasoningEffort` field sent to the worker. 'cheap' runs on a
  * different (cheaper) OpenRouter model but with no extended thinking, so it
- * shares 'minimal's depth value. */
+ * shares 'minimal's depth value. Pro tiers map to the worker's pro_* keys. */
 export function reasoningApiValue(effort: ReasoningEffort): string {
-  return effort === 'cheap' ? 'minimal' : effort;
+  switch (effort) {
+    case 'cheap':
+      return 'minimal';
+    case 'proSmart':
+      return 'pro_smart';
+    case 'proDeep':
+      return 'pro_deep';
+    case 'proExpert':
+      return 'pro_expert';
+    case 'proMax':
+      return 'pro_max';
+    default:
+      return effort;
+  }
 }
 
-/** AI provider this depth routes to. 'cheap' and 'max' use OpenRouter (Mistral
- * / Gemma respectively); the rest use DeepSeek. */
+/** AI provider this depth routes to. 'cheap', 'max' and 'proMax' use
+ * OpenRouter; the rest (incl. the other pro tiers) use DeepSeek. */
 export function reasoningProvider(effort: ReasoningEffort): 'deepseek' | 'openrouter' {
-  return effort === 'cheap' || effort === 'max' ? 'openrouter' : 'deepseek';
+  return effort === 'cheap' || effort === 'max' || effort === 'proMax' ? 'openrouter' : 'deepseek';
 }
 
 /** Quota cost multiplier per raw provider token. 'cheap' is the lightest model
- * (half price); 'max' is the premium Gemma model with the deepest thinking
- * (double price); everything else is standard price. */
+ * (half price); 'max' is the premium Gemma model (double); the DeepSeek pro
+ * tiers are ×2.5 and the OpenRouter pro tier is ×3. */
 export function reasoningCostMultiplier(effort: ReasoningEffort): number {
   if (effort === 'cheap') return 0.5;
   if (effort === 'max') return 2;
+  if (effort === 'proMax') return 3;
+  if (isProEffort(effort)) return 2.5;
   return 1;
 }
 
-/** "×0.5" / "×2" badge for non-standard-price tiers; null for standard-price
- * tiers so the UI isn't cluttered. */
+/** "×0.5" / "×2" / "×2.5" / "×3" badge for non-standard-price tiers; null for
+ * standard-price tiers so the UI isn't cluttered. */
 export function reasoningCostBadge(effort: ReasoningEffort): string | null {
   if (effort === 'cheap') return '×0.5';
   if (effort === 'max') return '×2';
+  if (effort === 'proMax') return '×3';
+  if (isProEffort(effort)) return '×2.5';
   return null;
 }
 
@@ -169,6 +204,14 @@ export function reasoningEmoji(effort: ReasoningEffort): string {
       return '👑';
     case 'cheap':
       return '🪙';
+    case 'proSmart':
+      return '🧠';
+    case 'proDeep':
+      return '✨';
+    case 'proExpert':
+      return '🔬';
+    case 'proMax':
+      return '💎';
     default:
       return '⚡';
   }

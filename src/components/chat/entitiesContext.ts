@@ -39,20 +39,39 @@ export function buildEntitiesContext(courses: Course[], tasks: Task[], smartRemi
 /** Answers the `{"tool":"get_schedule","date":"YYYY-MM-DD"}` read-only tool
  * call locally from app scheduleItems — same day-matching semantics as the
  * Dart `_scheduleForDate`: exact date match, multi-day span, or weekly-repeat
- * weekday match. Device-calendar mirror items are marked as external. */
-export function scheduleForDate(dateStr: string | undefined, scheduleItems: ScheduleItem[]): { date: string | undefined; events: unknown[] } {
+ * weekday match. Device-calendar mirror items are marked as external.
+ * An optional `endDate` turns the lookup into a range (capped at 31 days) so
+ * the model can read a whole week/month in one round-trip; each matching item
+ * is returned once (its own start/end + weeklyRepeat tell the story). */
+export function scheduleForDate(
+  dateStr: string | undefined,
+  endDateStr: string | undefined,
+  scheduleItems: ScheduleItem[],
+): { date: string | undefined; endDate?: string; events: unknown[] } {
   const date = dateStr ? new Date(dateStr) : null;
   if (!date || Number.isNaN(date.getTime())) return { date: dateStr, events: [] };
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const first = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const endParsed = endDateStr ? new Date(endDateStr) : null;
+  let last = endParsed && !Number.isNaN(endParsed.getTime())
+    ? new Date(endParsed.getFullYear(), endParsed.getMonth(), endParsed.getDate())
+    : first;
+  if (last.getTime() < first.getTime()) last = first;
+  const maxLast = new Date(first);
+  maxLast.setDate(maxLast.getDate() + 30);
+  if (last.getTime() > maxLast.getTime()) last = maxLast;
   const events = scheduleItems
     .filter((e) => {
       const s = new Date(e.startDateTime);
       const en = new Date(e.endDateTime);
       const startDay = new Date(s.getFullYear(), s.getMonth(), s.getDate()).getTime();
       const endDay = new Date(en.getFullYear(), en.getMonth(), en.getDate()).getTime();
-      const withinSpan = d >= startDay && d <= endDay;
-      const repeats = e.weeklyRepeat && s.getDay() === new Date(d).getDay() && d >= startDay;
-      return withinSpan || repeats;
+      for (const d = new Date(first); d.getTime() <= last.getTime(); d.setDate(d.getDate() + 1)) {
+        const day = d.getTime();
+        const withinSpan = day >= startDay && day <= endDay;
+        const repeats = e.weeklyRepeat && s.getDay() === d.getDay() && day >= startDay;
+        if (withinSpan || repeats) return true;
+      }
+      return false;
     })
     .map((e) => ({
       id: e.id,
@@ -66,5 +85,5 @@ export function scheduleForDate(dateStr: string | undefined, scheduleItems: Sche
       external: e.createdBy === 'device',
       calendarId: e.calendarId ?? null,
     }));
-  return { date: dateStr, events };
+  return endDateStr ? { date: dateStr, endDate: endDateStr, events } : { date: dateStr, events };
 }

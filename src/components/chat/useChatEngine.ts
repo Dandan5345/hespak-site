@@ -7,7 +7,7 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { genId, reasoningApiValue, reasoningCostMultiplier, reasoningProvider, type ChatTokenUsage, type ReasoningEffort } from '../../state/types';
 import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIntent } from './keywordIntents';
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
-import { applyMutationActions, mutationActionsFromJson } from './chatActions';
+import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
 import { useCloudChat, type CloudChatMessage, type CloudChatSession } from './useCloudChat';
 import type { LocalChatMessage } from './types';
@@ -51,13 +51,24 @@ function sameThread(a: CloudChatMessage[], b: CloudChatMessage[]): boolean {
   return true;
 }
 
+/** Is `a` the beginning of `b`? Used to tell "the same conversation grew on
+ * another device" (adopt silently) apart from "a different conversation
+ * replaced ours" (archive ours first so it isn't lost from the history). */
+function threadIsPrefix(a: CloudChatMessage[], b: CloudChatMessage[]): boolean {
+  if (a.length > b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].fromUser !== b[i].fromUser || a[i].text !== b[i].text) return false;
+  }
+  return true;
+}
+
 /** Hard cap on the conversation memory kept per chat: the model always sees
  * the full history up to ~16K estimated tokens; past that the user is asked to
  * start a new chat (the old one stays in the history). */
 export const CONTEXT_TOKEN_LIMIT = 16000;
 
 const REASONING_KEY = 'sf_reasoning';
-const VALID_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max'];
+const VALID_EFFORTS: ReasoningEffort[] = ['cheap', 'minimal', 'medium', 'high', 'expert', 'max', 'proSmart', 'proDeep', 'proExpert', 'proMax'];
 
 function readEffort(): ReasoningEffort {
   const v = localStorage.getItem(REASONING_KEY);
@@ -282,7 +293,20 @@ export function useChatEngine() {
     // the loaded-packs / prompt-read tracking and re-charge the instruction
     // tokens on every turn. Compare (sender, text) — not raw JSON, because
     // Firestore returns tokenUsage maps with re-sorted keys.
-    if (sameThread(remote, toCloudChat(messagesRef.current))) return;
+    const local = toCloudChat(messagesRef.current);
+    if (sameThread(remote, local)) return;
+    // A *different* conversation is replacing ours (e.g. a new chat started on
+    // the phone) — archive the current one into the history first, or it would
+    // silently vanish. A thread that merely grew/shrank on the other device is
+    // the same conversation and is adopted as-is.
+    if (
+      hasRealConversation(local) &&
+      !threadIsPrefix(local, remote) &&
+      !threadIsPrefix(remote, local) &&
+      !cloudChatSessions.some((s) => sameThread(s.messages, local))
+    ) {
+      saveCloudSessions(archiveCurrent());
+    }
     suppressSaveRef.current = true;
     restoreFromCloud(remote, { packs: cloudChatPacks, entities: cloudChatPacksEntities });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -515,7 +539,11 @@ export function useChatEngine() {
 
           // Read-only schedule lookup: answer locally, feed back, let the model continue.
           if (parsed && parsed.tool === 'get_schedule' && round < MAX_TOOL_ROUNDS) {
-            const lookup = scheduleForDate(typeof parsed.date === 'string' ? parsed.date : undefined, data.scheduleItems);
+            const lookup = scheduleForDate(
+              typeof parsed.date === 'string' ? parsed.date : undefined,
+              typeof parsed.endDate === 'string' ? parsed.endDate : undefined,
+              data.scheduleItems,
+            );
             const encoded = JSON.stringify(lookup);
             addPromptReadContext(t('chat_prompt_read_schedule_result'), encoded, t('chat_status_prompt_schedule_result'));
             setAiContext([...aiContextRef.current, { role: 'user', content: encoded }]);
@@ -544,7 +572,10 @@ export function useChatEngine() {
           const mutations = parsed ? mutationActionsFromJson(parsed) : [];
           if (mutations.length > 0) {
             const message = rawMessage || t('chat_pending_change').replace('{count}', String(mutations.length));
-            pushAiMessage(message, { tokenUsage: usage, pendingActions: mutations });
+            // Ground-truth breakdown built from the JSON itself, so approval is
+            // never based on a vague model summary alone.
+            const details = describeActions(mutations, data, t, lang);
+            pushAiMessage(details ? `${message}\n\n${details}` : message, { tokenUsage: usage, pendingActions: mutations });
             return;
           }
 
@@ -565,7 +596,7 @@ export function useChatEngine() {
         setTypingStatus(null);
       }
     },
-    [addPromptReadContext, applyHistoryDiscount, buildMessages, data, displayName, idToken, pushAiMessage, revealReply, setAiContext, t, tt],
+    [addPromptReadContext, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, pushAiMessage, revealReply, setAiContext, t, tt],
   );
 
   const memoryFull = contextTokens >= CONTEXT_TOKEN_LIMIT;

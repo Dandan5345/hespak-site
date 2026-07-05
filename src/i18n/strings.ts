@@ -481,6 +481,45 @@ export const translations: Record<string, Record<string, string>> = {
     'en':
       'I’m about to make {count} change(s). Nothing will change until you approve.',
   },
+  'chat_details_header': {
+    'he': '🔍 פירוט מדויק ({count} שינויים):',
+    'en': '🔍 Exact breakdown ({count} changes):',
+  },
+  'chat_detail_create': { 'he': '➕ יצירת', 'en': '➕ Create' },
+  'chat_detail_update': { 'he': '✏️ עדכון', 'en': '✏️ Update' },
+  'chat_detail_delete': { 'he': '🗑️ מחיקת', 'en': '🗑️ Delete' },
+  'chat_noun_course': { 'he': 'קורס', 'en': 'course' },
+  'chat_noun_task': { 'he': 'משימה', 'en': 'task' },
+  'chat_noun_schedule': { 'he': 'פריט לו"ז', 'en': 'schedule item' },
+  'chat_noun_reminder': { 'he': 'התראה חכמה', 'en': 'smart reminder' },
+  'chat_detail_all_day': { 'he': 'כל היום', 'en': 'all day' },
+  'chat_detail_weekly': { 'he': 'חוזר כל שבוע', 'en': 'repeats weekly' },
+  'chat_detail_due': { 'he': 'דדליין', 'en': 'due' },
+  'chat_detail_task_slots_too': {
+    'he': 'כולל משבצות הלו"ז המקושרות',
+    'en': 'including its linked schedule slots',
+  },
+  'chat_detail_focus': {
+    'he': '🎯 הפעלת מצב מיקוד ל-{min} דקות',
+    'en': '🎯 Start a {min}-minute focus',
+  },
+  'chat_detail_yes': { 'he': 'כן', 'en': 'yes' },
+  'chat_detail_no': { 'he': 'לא', 'en': 'no' },
+  'chat_field_title': { 'he': 'שם', 'en': 'title' },
+  'chat_field_name': { 'he': 'שם', 'en': 'name' },
+  'chat_field_description': { 'he': 'תיאור', 'en': 'description' },
+  'chat_field_startDate': { 'he': 'תאריך התחלה', 'en': 'start date' },
+  'chat_field_endDate': { 'he': 'תאריך סיום', 'en': 'end date' },
+  'chat_field_courseId': { 'he': 'קורס', 'en': 'course' },
+  'chat_field_dueDateTime': { 'he': 'דדליין', 'en': 'due' },
+  'chat_field_urgency': { 'he': 'דחיפות', 'en': 'urgency' },
+  'chat_field_estimatedDurationMinutes': { 'he': 'משך משוער (דק׳)', 'en': 'estimated minutes' },
+  'chat_field_isCompleted': { 'he': 'הושלמה', 'en': 'completed' },
+  'chat_field_taskId': { 'he': 'משימה מקושרת', 'en': 'linked task' },
+  'chat_field_type': { 'he': 'סוג', 'en': 'type' },
+  'chat_field_weeklyRepeat': { 'he': 'חזרה שבועית', 'en': 'weekly repeat' },
+  'chat_field_allDay': { 'he': 'כל היום', 'en': 'all day' },
+  'chat_field_dateTime': { 'he': 'מועד', 'en': 'time' },
   'chat_confirm_change': { 'he': 'מאשר', 'en': 'Approve' },
   'chat_reject_change': { 'he': 'לא מאשר', 'en': 'Reject' },
   'chat_change_rejected_followup': {
@@ -524,6 +563,34 @@ export const translations: Record<string, Record<string, string>> = {
   'reasoning_max_hint': {
     'he': 'המודל החזק ביותר (Gemma) עם החשיבה העמוקה ביותר — הכי יקר',
     'en': 'The strongest model (Gemma) with the deepest thinking — the priciest tier',
+  },
+
+  // --- chat: Pro mode (premium models) ---
+  'chat_pro_activate': { 'he': 'הפעל פרו', 'en': 'Go Pro' },
+  'chat_pro_on': { 'he': 'פרו פעיל', 'en': 'Pro on' },
+  'chat_pro_desc': {
+    'he': 'מודלים חזקים במיוחד — איכות מקסימלית במחיר גבוה יותר',
+    'en': 'Extra-powerful models — top quality at a higher rate',
+  },
+  'reasoning_pro_smart': { 'he': 'חכם', 'en': 'Smart' },
+  'reasoning_pro_smart_hint': {
+    'he': 'DeepSeek V4 Pro עם חשיבה קלה — חכם ומהיר',
+    'en': 'DeepSeek V4 Pro with light thinking — smart and fast',
+  },
+  'reasoning_pro_deep': { 'he': 'מעמיק', 'en': 'Deep' },
+  'reasoning_pro_deep_hint': {
+    'he': 'DeepSeek V4 Pro עם חשיבה עמוקה — לתכנון רציני',
+    'en': 'DeepSeek V4 Pro with deep thinking — for serious planning',
+  },
+  'reasoning_pro_expert': { 'he': 'מומחה', 'en': 'Expert' },
+  'reasoning_pro_expert_hint': {
+    'he': 'DeepSeek V4 Pro בחשיבה המקסימלית — למשימות הכי מורכבות',
+    'en': 'DeepSeek V4 Pro at maximum reasoning — for the hardest tasks',
+  },
+  'reasoning_pro_max': { 'he': 'אולטרה', 'en': 'Ultra' },
+  'reasoning_pro_max_hint': {
+    'he': 'Gemma 4 31B — המודל החזק ביותר שיש, חשיבה עמוקה',
+    'en': 'Gemma 4 31B — the strongest model available, deep thinking',
   },
 
   // --- chat: chat credits & history ---

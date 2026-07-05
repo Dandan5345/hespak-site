@@ -44,6 +44,134 @@ export function mutationActionsFromJson(json: Json): Json[] {
   return [];
 }
 
+/** Builds the exact, ground-truth breakdown of a staged action batch that is
+ * appended under the model's own "message" in the approval bubble — so the
+ * user always sees precisely what will happen, even if the model's free-text
+ * explanation is vague. One markdown list line per action. */
+export function describeActions(actions: Json[], data: Data, t: (key: string) => string, lang: string): string {
+  const locale = lang === 'he' ? 'he-IL' : 'en-US';
+  const fmtDay = (iso: string | undefined): string => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'numeric' }).format(d);
+  };
+  const fmtTime = (iso: string | undefined): string => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
+  };
+  const fmtRange = (startIso?: string, endIso?: string, allDay?: boolean): string => {
+    if (!startIso) return '';
+    const day = fmtDay(startIso);
+    if (allDay) return `${day} (${t('chat_detail_all_day')})`;
+    const sameDay = endIso && startIso.slice(0, 10) === endIso.slice(0, 10);
+    if (endIso && !sameDay) return `${day} ${fmtTime(startIso)} → ${fmtDay(endIso)} ${fmtTime(endIso)}`;
+    return `${day} ${fmtTime(startIso)}${endIso ? `–${fmtTime(endIso)}` : ''}`;
+  };
+  const line = (verb: string, noun: string, title: string, extra?: string): string =>
+    `- ${t(verb)} ${t(noun)}: "${title}"${extra ? ` — ${extra}` : ''}`;
+
+  const lines: string[] = [];
+  for (const a of actions) {
+    if (!a || typeof a !== 'object') continue;
+    const id = str(a.id);
+    switch (a.action) {
+      case 'create_course':
+        lines.push(line('chat_detail_create', 'chat_noun_course', str(a.title) ?? str(a.name) ?? '', [str(a.startDate), str(a.endDate)].filter(Boolean).join(' → ')));
+        break;
+      case 'update_course': {
+        const current = id ? data.courseById(id) : undefined;
+        lines.push(line('chat_detail_update', 'chat_noun_course', current?.name ?? id ?? '', changedFields(a, ['title', 'name', 'description', 'startDate', 'endDate'], t)));
+        break;
+      }
+      case 'delete_course': {
+        const current = id ? data.courseById(id) : undefined;
+        lines.push(line('chat_detail_delete', 'chat_noun_course', current?.name ?? id ?? ''));
+        break;
+      }
+      case 'create_task': {
+        const due = str(a.dueDateTime);
+        lines.push(line('chat_detail_create', 'chat_noun_task', str(a.title) ?? '', due ? `${t('chat_detail_due')} ${fmtDay(due)} ${fmtTime(due)}` : undefined));
+        break;
+      }
+      case 'update_task': {
+        const current = id ? data.taskById(id) : undefined;
+        lines.push(line('chat_detail_update', 'chat_noun_task', current?.title ?? id ?? '', changedFields(a, ['title', 'description', 'courseId', 'dueDateTime', 'urgency', 'estimatedDurationMinutes', 'isCompleted'], t)));
+        break;
+      }
+      case 'delete_task': {
+        const current = id ? data.taskById(id) : undefined;
+        lines.push(line('chat_detail_delete', 'chat_noun_task', current?.title ?? id ?? '', t('chat_detail_task_slots_too')));
+        break;
+      }
+      case 'create_schedule_item': {
+        const linkedTask = str(a.taskId) ? data.taskById(str(a.taskId)!) : undefined;
+        const title = str(a.title) ?? linkedTask?.title ?? '';
+        let extra = fmtRange(str(a.startDateTime) ?? str(a.start), str(a.endDateTime) ?? str(a.end), bool(a.allDay));
+        if (bool(a.weeklyRepeat)) extra += ` (${t('chat_detail_weekly')})`;
+        lines.push(line('chat_detail_create', 'chat_noun_schedule', title, extra));
+        break;
+      }
+      case 'update_schedule_item': {
+        const current = id ? data.scheduleById(id) : undefined;
+        const parts: string[] = [];
+        if (current) parts.push(fmtRange(current.startDateTime, current.endDateTime, current.allDay));
+        const newRange = fmtRange(str(a.startDateTime), str(a.endDateTime), bool(a.allDay) ?? current?.allDay);
+        if (newRange && str(a.startDateTime)) parts.push(`→ ${newRange}`);
+        const fields = changedFields(a, ['title', 'description', 'taskId', 'type', 'weeklyRepeat', 'allDay'], t);
+        lines.push(line('chat_detail_update', 'chat_noun_schedule', current?.title ?? id ?? '', [parts.join(' '), fields].filter(Boolean).join(' · ')));
+        break;
+      }
+      case 'delete_schedule_item': {
+        const current = id ? data.scheduleById(id) : undefined;
+        lines.push(line('chat_detail_delete', 'chat_noun_schedule', current?.title ?? id ?? '', current ? fmtRange(current.startDateTime, current.endDateTime, current.allDay) : undefined));
+        break;
+      }
+      case 'start_focus':
+        lines.push(`- ${t('chat_detail_focus').replace('{min}', String(num(a.minutes) ?? (Number.isFinite(Number(a.minutes)) ? Number(a.minutes) : 0)))}`);
+        break;
+      case 'set_smart_notifications':
+        lines.push(`- ${t(a.enabled === false ? 'chat_smart_notif_off' : 'chat_smart_notif_on')}`);
+        break;
+      case 'create_smart_reminder': {
+        const when = str(a.dateTime);
+        lines.push(line('chat_detail_create', 'chat_noun_reminder', str(a.title) ?? '', when ? `${fmtDay(when)} ${fmtTime(when)}` : undefined));
+        break;
+      }
+      case 'update_smart_reminder': {
+        const current = id ? data.smartReminders.find((r) => r.id === id) : undefined;
+        lines.push(line('chat_detail_update', 'chat_noun_reminder', current?.title ?? id ?? '', changedFields(a, ['title', 'description', 'dateTime'], t)));
+        break;
+      }
+      case 'delete_smart_reminder': {
+        const current = id ? data.smartReminders.find((r) => r.id === id) : undefined;
+        lines.push(line('chat_detail_delete', 'chat_noun_reminder', current?.title ?? id ?? ''));
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  if (lines.length === 0) return '';
+  const header = t('chat_details_header').replace('{count}', String(lines.length));
+  return `${header}\n${lines.join('\n')}`;
+}
+
+/** "field: value" fragments for the fields an update action actually sends. */
+function changedFields(a: Json, keys: string[], t: (key: string) => string): string {
+  const parts: string[] = [];
+  for (const key of keys) {
+    if (!(key in a)) continue;
+    const v = a[key];
+    if (v === undefined) continue;
+    const label = t(`chat_field_${key}`);
+    parts.push(`${label}: ${typeof v === 'boolean' ? t(v ? 'chat_detail_yes' : 'chat_detail_no') : String(v ?? '—')}`);
+  }
+  return parts.join(' · ');
+}
+
 const COLOR_PALETTE = [0xff6366f1, 0xff22c55e, 0xfff59e0b, 0xffec4899, 0xff06b6d4, 0xff8b5cf6, 0xffef4444, 0xff14b8a6];
 function colorFor(seed: string): number {
   let h = 0;

@@ -2,6 +2,7 @@ import { useI18n } from '../../i18n/I18nProvider';
 import { useState } from 'react';
 import type { SfTokens } from '../../theme/tokens';
 import { AgentAvatar } from './AgentAvatar';
+import { MarkdownText } from './MarkdownText';
 import type { LocalChatMessage } from './types';
 
 function fmtTokens(n: number): string {
@@ -71,7 +72,7 @@ export function ChatBubble({ message, tokens, onApprove, onReject, onUndo, onGoF
       {!mine && <AgentAvatar size={30} tokens={tokens} />}
       <div className="flex flex-col" style={{ maxWidth: '76%', alignItems: mine ? 'flex-end' : 'flex-start' }}>
         <div
-          className="px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap break-words"
+          className={`px-4 py-2.5 text-[15px] leading-relaxed break-words ${mine ? 'whitespace-pre-wrap' : ''}`}
           style={{
             background: mine ? 'var(--sf-accent-gradient)' : tokens.surface,
             color: mine ? tokens.onAccent : tokens.text,
@@ -83,7 +84,7 @@ export function ChatBubble({ message, tokens, onApprove, onReject, onUndo, onGoF
             borderEndEndRadius: mine ? 6 : 20,
           }}
         >
-          {message.text}
+          {mine ? message.text : <MarkdownText text={message.text} tokens={tokens} />}
 
           {message.pending && message.pending.resolved === 'pending' && (
             <div className="flex gap-2 mt-3">
