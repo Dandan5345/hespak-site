@@ -496,6 +496,15 @@ export function useChatEngine() {
     [estimateSystemInstructionTokens],
   );
 
+  const applyAuthoritativeCharge = useCallback((usage: ChatTokenUsage, charged?: number): ChatTokenUsage => {
+    if (charged == null) return usage;
+    const chargedTokens = Math.max(0, Math.round(charged));
+    const historyTokensCharged = usage.chargedTokens > 0
+      ? Math.round(usage.historyTokensCharged * (chargedTokens / usage.chargedTokens))
+      : 0;
+    return { ...usage, chargedTokens, historyTokensCharged };
+  }, []);
+
   const runAiLoop = useCallback(
     async (currentEffort: ReasoningEffort) => {
       setTyping(true);
@@ -522,8 +531,11 @@ export function useChatEngine() {
             idToken: await idToken(),
             displayName,
           });
+          if (result.remaining != null) {
+            data.applyTokenQuota({ remainingTokens: result.remaining });
+          }
           const usage = result.usage
-            ? applyHistoryDiscount(
+            ? applyAuthoritativeCharge(applyHistoryDiscount(
                 {
                   ...result.usage,
                   promptReadTokens: visiblePromptReadTokens,
@@ -531,7 +543,7 @@ export function useChatEngine() {
                   promptReadBreakdown: visiblePromptReadBreakdown,
                 },
                 currentEffort,
-              )
+              ), result.charged)
             : undefined;
           const replyText = result.text;
           setTypingStatus(null);
@@ -598,7 +610,7 @@ export function useChatEngine() {
         setTypingStatus(null);
       }
     },
-    [addPromptReadContext, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, pushAiMessage, revealReply, setAiContext, t, tt],
+    [addPromptReadContext, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, idToken, lang, pushAiMessage, revealReply, setAiContext, t, tt],
   );
 
   // Pro tiers get double the conversation memory.
@@ -752,7 +764,12 @@ export function useChatEngine() {
       );
       const summary = result.text.trim();
       if (!summary) throw new Error('empty summary');
-      const usage = result.usage ? applyHistoryDiscount(result.usage, effort) : undefined;
+      if (result.remaining != null) {
+        data.applyTokenQuota({ remainingTokens: result.remaining });
+      }
+      const usage = result.usage
+        ? applyAuthoritativeCharge(applyHistoryDiscount(result.usage, effort), result.charged)
+        : undefined;
       // Keep the full conversation reachable from the history before compacting.
       saveCloudSessions(archiveCurrent());
       const keep = visible.slice(-10);
@@ -777,7 +794,7 @@ export function useChatEngine() {
       setTyping(false);
       setTypingStatus(null);
     }
-  }, [typing, summarizing, effort, idToken, displayName, applyHistoryDiscount, saveCloudSessions, archiveCurrent, setAiContext, pushAiMessage, t, tt]);
+  }, [typing, summarizing, effort, idToken, displayName, data, applyAuthoritativeCharge, applyHistoryDiscount, saveCloudSessions, archiveCurrent, setAiContext, pushAiMessage, t, tt]);
 
   // Restore a saved session into the active conversation, archiving whatever is
   // open now (mirrors the app's restoreSession).

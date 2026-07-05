@@ -34,6 +34,7 @@ interface DataCtx {
   agentName: string;
   agentMemory: string;
   tokenQuota: TokenQuota | null;
+  applyTokenQuota: (quota: TokenQuota) => void;
 
   courseById: (id?: string | null) => Course | undefined;
   taskById: (id?: string | null) => Task | undefined;
@@ -384,6 +385,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mutate((prev) => ({ ...prev, agentMemory: memory.trim().slice(0, 1400) }));
   };
 
+  const applyTokenQuota = useCallback<DataCtx['applyTokenQuota']>((quota) => {
+    setTokenQuota((prev) => ({
+      remainingTokens: quota.remainingTokens,
+      displayName: quota.displayName ?? prev?.displayName ?? null,
+    }));
+  }, []);
+
   const snapshotState = useCallback(() => structuredClone(state), [state]);
   const restoreState = useCallback((snapshot: CloudAppState) => {
     mutate(() => structuredClone(snapshot));
@@ -405,6 +413,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       agentName: state.agentName,
       agentMemory: state.agentMemory,
       tokenQuota,
+      applyTokenQuota,
       courseById,
       taskById,
       scheduleById,
@@ -427,7 +436,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       deleteAllCloudData,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loaded, state, tokenQuota, courseById, taskById, scheduleById, allScheduleItems, snapshotState, restoreState, deleteAllCloudData],
+    [loaded, state, tokenQuota, applyTokenQuota, courseById, taskById, scheduleById, allScheduleItems, snapshotState, restoreState, deleteAllCloudData],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
