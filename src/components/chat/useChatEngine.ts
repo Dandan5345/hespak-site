@@ -67,11 +67,10 @@ function threadIsPrefix(a: CloudChatMessage[], b: CloudChatMessage[]): boolean {
 }
 
 /** Hard cap on the conversation memory kept per chat: the model always sees
- * the full history up to ~16K estimated tokens (32K on the Pro tiers); past
- * that the user can either summarize-and-compact the conversation in place or
- * start a new chat (the old one stays in the history). */
-export const CONTEXT_TOKEN_LIMIT = 16000;
-export const PRO_CONTEXT_TOKEN_LIMIT = 32000;
+ * the full history up to ~128K estimated tokens; past that the user can either
+ * summarize-and-compact the conversation in place or start a new chat (the old
+ * one stays in the history). */
+export const CONTEXT_TOKEN_LIMIT = 128_000;
 
 const REASONING_KEY = 'sf_reasoning';
 const MODEL_FAMILY_KEY = 'sf_model_family';
@@ -205,7 +204,7 @@ export function useChatEngine() {
   // app's chatTypingStatus.
   const [typingStatus, setTypingStatus] = useState<string | null>(null);
   // Estimated tokens of the conversation history the model sees (system
-  // instructions excluded). Drives the 16K memory meter + full-memory gate.
+  // instructions excluded). Drives the memory meter + full-memory gate.
   const [contextTokens, setContextTokens] = useState(0);
   // While the agent is *writing* (not thinking), the reply is revealed a few
   // characters at a time here — the web analogue of the app's streamingText.
@@ -259,7 +258,7 @@ export function useChatEngine() {
   );
 
   // Single write-path for the model context: keeps the ref and the estimated
-  // token counter in sync so the 16K memory gate is always accurate.
+  // token counter in sync so the memory gate is always accurate.
   const setAiContext = useCallback((turns: ChatTurn[], tokenAdjustment = 0) => {
     aiContextRef.current = turns;
     let total = 0;
@@ -764,11 +763,7 @@ export function useChatEngine() {
     [addPromptReadContext, appendAiContextTurn, applyAuthoritativeCharge, applyHistoryDiscount, buildMessages, data, displayName, geminiPro, idToken, lang, modelFamily, pushAiMessage, revealReply, t, tt],
   );
 
-  // GPT/Gemini and Pro tiers get double the conversation memory.
-  const contextLimit =
-    isProEffort(effort) || modelFamily === 'gpt' || modelFamily === 'gemini'
-      ? PRO_CONTEXT_TOKEN_LIMIT
-      : CONTEXT_TOKEN_LIMIT;
+  const contextLimit = CONTEXT_TOKEN_LIMIT;
   const memoryFull = contextTokens >= contextLimit;
 
   const sendText = useCallback(
