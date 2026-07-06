@@ -58,12 +58,12 @@ export const translations: Record<string, Record<string, string>> = {
   'nav_stats': { 'he': 'סטטס', 'en': 'Stats' },
   'nav_tasks_courses': { 'he': 'משימות וקורסים', 'en': 'Tasks & Courses' },
   'nav_profile': { 'he': 'פרופיל', 'en': 'Profile' },
-  'nav_chat': { 'he': 'צ׳אט AI', 'en': 'AI Chat' },
+  'nav_chat': { 'he': 'צ׳אט', 'en': 'Chat' },
 
   // --- home ---
   'today_str': { 'he': 'היום', 'en': 'Today' },
   'greeting': { 'he': 'בוקר טוב 👋', 'en': 'Good morning 👋' },
-  'ai_daily_summary': { 'he': 'סיכום AI יומי', 'en': 'Daily AI summary' },
+  'ai_daily_summary': { 'he': 'סיכום יומי', 'en': 'Daily summary' },
   'home_ai_text': {
     'he': 'יש לך משימות ואירועים היום — בוא/י נתכנן יחד 🧠',
     'en': 'You have tasks and events today — let\'s plan together 🧠',

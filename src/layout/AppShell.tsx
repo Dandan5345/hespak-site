@@ -2,6 +2,7 @@ import { type ReactNode } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n/I18nProvider';
 import { useSfTheme } from '../theme/ThemeProvider';
+import { useData } from '../state/DataContext';
 
 interface NavItem {
   to: string;
@@ -23,7 +24,9 @@ const NAV_ITEMS: NavItem[] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const { t, isRtl } = useI18n();
   const { tokens } = useSfTheme();
+  const { agentName } = useData();
   const navigate = useNavigate();
+  const agentDisplayName = agentName.trim() || t('agent_default_name');
 
   return (
     <div className="flex min-h-screen w-full" style={{ color: tokens.text }}>
@@ -67,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             style={{ background: tokens.accentSoft, color: tokens.accent }}
           >
             <span className="text-xl">💬</span>
-            <span className="hidden lg:inline">{t('nav_chat')}</span>
+            <span className="hidden lg:inline truncate">{agentDisplayName}</span>
           </button>
         </div>
       </nav>
@@ -120,7 +123,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           color: tokens.onAccent,
           boxShadow: tokens.glow !== 'none' ? tokens.glow : '0 6px 20px rgba(0,0,0,0.25)',
         }}
-        aria-label={t('nav_chat')}
+        aria-label={agentDisplayName}
       >
         💬
       </button>
