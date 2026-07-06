@@ -9,9 +9,9 @@ import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIn
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
-import { parseFile, type ParsedFile } from './fileParser';
-import { processImage, isImageFile, type ImageProcessError } from './imageUtils';
+import { processImage, isImageFile } from './imageUtils';
 import type { ChatContentPart } from '../../services/aiChat';
+import { prepareRawFile } from './rawFile';
 import { useCloudChat, type CloudChatMessage, type CloudChatSession, type CloudUndoSnapshots } from './useCloudChat';
 import type { LocalChatMessage } from './types';
 import type { CloudAppState } from '../../state/types';
@@ -118,6 +118,20 @@ function estimateTokens(text: string): number {
     else other++;
   }
   return Math.ceil(heb / 2 + other / 4);
+}
+
+function estimateContentTokens(content: ChatTurn['content']): number {
+  if (typeof content === 'string') return estimateTokens(content);
+  return content.reduce((sum, part) => {
+    if (part.type === 'text') return sum + estimateTokens(part.text);
+    if (part.type === 'image_url') return sum + 1500;
+    const dataUrl = part.file.file_data;
+    const comma = dataUrl.indexOf(',');
+    const base64Length = comma >= 0 ? dataUrl.length - comma - 1 : dataUrl.length;
+    const padding = dataUrl.endsWith('==') ? 2 : dataUrl.endsWith('=') ? 1 : 0;
+    const bytes = Math.max(0, Math.floor((base64Length * 3) / 4) - padding);
+    return sum + estimateTokens(part.file.filename) + Math.min(60_000, Math.max(300, Math.ceil(bytes / 1024)));
+  }, 0);
 }
 
 function aiOutputContextTokens(text: string, usage?: ChatTokenUsage | null): number {
@@ -249,13 +263,13 @@ export function useChatEngine() {
   const setAiContext = useCallback((turns: ChatTurn[], tokenAdjustment = 0) => {
     aiContextRef.current = turns;
     let total = 0;
-    for (const turn of turns) total += estimateTokens(turn.content);
+    for (const turn of turns) total += estimateContentTokens(turn.content);
     setContextTokens(Math.max(0, total + tokenAdjustment));
   }, []);
 
   const appendAiContextTurn = useCallback((turn: ChatTurn, actualTokens?: number) => {
     aiContextRef.current = [...aiContextRef.current, turn];
-    const estimated = estimateTokens(turn.content);
+    const estimated = estimateContentTokens(turn.content);
     const counted = actualTokens ?? estimated;
     setContextTokens((prev) => Math.max(0, prev + counted));
   }, []);
@@ -769,18 +783,18 @@ export function useChatEngine() {
     [typing, memoryFull, ensureLazyPacks, runAiLoop, effort, appendAiContextTurn],
   );
 
-  // Attach a user-uploaded file (Excel/PDF/CSV/text) to the chat. The file is
-  // parsed to text in the browser, then injected as a user turn so every
-  // provider (DeepSeek/GPT/Gemini) can read it — no multimodal API needed.
-  // The optional `note` is the user's own caption ("מה יש בקובץ הזה?").
+  // Attach a user-uploaded document/spreadsheet/text file to the chat. The raw
+  // bytes are sent as a provider file part; no client-side text extraction.
+  // DeepSeek/OpenRouter cannot read file parts, so document turns route to
+  // Gemini unless the user explicitly selected GPT.
   const [parsingFile, setParsingFile] = useState(false);
   const sendWithFile = useCallback(
     async (file: File, note: string) => {
       if (typing || memoryFull || parsingFile) return;
       setParsingFile(true);
-      let parsed: ParsedFile;
+      let rawFile;
       try {
-        parsed = await parseFile(file);
+        rawFile = await prepareRawFile(file);
       } catch (e) {
         setParsingFile(false);
         pushAiMessage(e instanceof Error ? `📎 ${e.message}` : t('chat_file_parse_error'));
@@ -788,22 +802,21 @@ export function useChatEngine() {
       }
       setParsingFile(false);
       const caption = note.trim();
-      // What the user sees in the bubble: the file name + summary + caption.
-      const visibleText = `📎 ${parsed.name} · ${parsed.summary}${caption ? `\n${caption}` : ''}`;
-      // What the model sees: a clear delimiter + the extracted content + the
-      // user's question, so it knows exactly what's file content vs. message.
-      const modelText =
-        `[המשתמש צירף קובץ: ${parsed.name} (${parsed.summary})]\n` +
-        `תוכן הקובץ:\n"""\n${parsed.text}\n"""` +
-        (caption ? `\n\nבקשת המשתמש: ${caption}` : '\n\n(המשתמש לא צירף בקשה מפורשת — סכם/נתח את התוכן.)');
-      // The file content may reference tasks/schedule concepts — load packs so
-      // the model can act if the user asks to turn the file into tasks etc.
-      ensureLazyPacks(caption || parsed.name);
-      setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: visibleText, inputTokens: estimateTokens(modelText) }]);
-      appendAiContextTurn({ role: 'user', content: modelText });
-      void runAiLoop(effort);
+      const promptText = caption || 'המשתמש צירף קובץ. קרא אותו כמו שהוא, סכם/נתח אותו וענה לפי התוכן.';
+      const visibleText = `📎 ${rawFile.name} · ${rawFile.summary}${caption ? `\n${caption}` : ''}`;
+      const parts: ChatContentPart[] = [
+        { type: 'file', file: { filename: rawFile.name, file_data: rawFile.dataUrl } },
+        { type: 'text', text: promptText },
+      ];
+      const targetFamily: ChatModelFamily = modelFamily === 'gpt' ? 'gpt' : 'gemini';
+      const fileEffort = modelFamily === targetFamily ? effort : 'medium';
+      const inputTokens = rawFile.estimatedTokens + estimateTokens(promptText);
+      ensureLazyPacks(caption || rawFile.name);
+      setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: visibleText, inputTokens }]);
+      appendAiContextTurn({ role: 'user', content: parts }, inputTokens);
+      void runAiLoop(fileEffort, targetFamily);
     },
-    [typing, memoryFull, parsingFile, ensureLazyPacks, pushAiMessage, t, appendAiContextTurn, runAiLoop, effort],
+    [typing, memoryFull, parsingFile, ensureLazyPacks, pushAiMessage, t, modelFamily, effort, appendAiContextTurn, runAiLoop],
   );
 
   // Attach a user-uploaded image to the chat. Images go ONLY to Gemini (the
@@ -850,7 +863,7 @@ export function useChatEngine() {
       const imageFamily = 'gemini' as ChatModelFamily;
       ensureLazyPacks(caption || file.name);
       setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: visibleText, inputTokens: 1500 }]);
-      appendAiContextTurn({ role: 'user', content: parts });
+      appendAiContextTurn({ role: 'user', content: parts }, 1500 + estimateTokens(caption));
       void runAiLoop(imageEffort, imageFamily);
     },
     [typing, memoryFull, parsingFile, ensureLazyPacks, pushAiMessage, t, appendAiContextTurn, runAiLoop, effort, modelFamily],

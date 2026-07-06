@@ -18,6 +18,7 @@ interface Props {
   onUndo?: (undoKey: string) => void;
   onGoFocus?: () => void;
   onQuickReply?: (text: string) => void;
+  streaming?: boolean;
 }
 
 function TokenBreakdown({ usage, tokens }: { usage: NonNullable<LocalChatMessage['tokenUsage']>; tokens: SfTokens }) {
@@ -63,12 +64,12 @@ function TokenBreakdown({ usage, tokens }: { usage: NonNullable<LocalChatMessage
   );
 }
 
-export function ChatBubble({ message, tokens, onApprove, onReject, onUndo, onGoFocus, onQuickReply }: Props) {
+export function ChatBubble({ message, tokens, onApprove, onReject, onUndo, onGoFocus, onQuickReply, streaming = false }: Props) {
   const { t } = useI18n();
   const mine = message.fromUser;
 
   return (
-    <div className={`flex mb-3 sf-bubble-in ${mine ? 'justify-end' : 'justify-start items-end gap-2'}`}>
+    <div className={`flex mb-3 ${streaming ? '' : 'sf-bubble-in'} ${mine ? 'justify-end' : 'justify-start items-end gap-2'}`}>
       {!mine && <AgentAvatar size={30} tokens={tokens} />}
       <div className="flex flex-col" style={{ maxWidth: '76%', alignItems: mine ? 'flex-end' : 'flex-start' }}>
         <div
@@ -84,7 +85,7 @@ export function ChatBubble({ message, tokens, onApprove, onReject, onUndo, onGoF
             borderEndEndRadius: mine ? 6 : 20,
           }}
         >
-          {mine ? message.text : <MarkdownText text={message.text} tokens={tokens} />}
+          {mine || streaming ? <span className="whitespace-pre-wrap">{message.text}</span> : <MarkdownText text={message.text} tokens={tokens} />}
 
           {message.pending && message.pending.resolved === 'pending' && (
             <div className="flex gap-2 mt-3">

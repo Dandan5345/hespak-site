@@ -14,6 +14,7 @@ import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TaskListIc
 import { ProgressRing } from '../components/focus/ProgressRing';
 import { reasoningEmoji, type ChatModelFamily } from '../state/types';
 import { isImageFile } from '../components/chat/imageUtils';
+import { RAW_FILE_ACCEPT } from '../components/chat/rawFile';
 
 const REASONING_LABEL_KEY = {
   cheap: 'reasoning_cheap',
@@ -65,14 +66,19 @@ export default function Chat() {
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: streamingText == null ? 'smooth' : 'auto',
+    });
   }, [messages.length, typing, streamingText]);
 
   const handleSend = () => {
     if (typing || noCredits || memoryFull) return;
     // If a file is staged, send it with the current input as the caption.
     if (stagedFile) {
-      // Images go to Gemini via the multimodal path; other files via text.
+      // Images and documents go through multimodal/raw-file paths.
       if (isImageFile(stagedFile)) {
         void sendWithImage(stagedFile, input);
       } else {
@@ -96,7 +102,7 @@ export default function Chat() {
     }
   };
 
-  // File picker: triggered by the 📎 button. Accepts Excel/PDF/CSV/text/images.
+  // File picker: triggered by the paperclip button.
   const openFilePicker = () => {
     fileInputRef.current?.click();
   };
@@ -421,6 +427,7 @@ export default function Chat() {
             tokens={tokens}
             onApprove={confirmPending}
             onReject={rejectPending}
+            streaming
           />
         )}
         {/* Thinking dots only while waiting for the reply — not while writing. */}
@@ -484,7 +491,7 @@ export default function Chat() {
                 <span style={{ color: tokens.textDim }} className="text-xs font-normal">
                   {(stagedFile.size / 1024).toFixed(stagedFile.size < 10240 ? 1 : 0)} KB
                 </span>
-                {isImageFile(stagedFile) && modelFamily !== 'gemini' && (
+                {((isImageFile(stagedFile) && modelFamily !== 'gemini') || (!isImageFile(stagedFile) && modelFamily !== 'gemini' && modelFamily !== 'gpt')) && (
                   <span style={{ color: tokens.accent }} className="text-xs font-bold">
                     · Gemini
                   </span>
@@ -511,7 +518,7 @@ export default function Chat() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".xlsx,.xls,.csv,.pdf,.txt,.md,.json,.xml,.html,.htm"
+                accept={RAW_FILE_ACCEPT}
                 onChange={onFileChosen}
                 className="hidden"
               />

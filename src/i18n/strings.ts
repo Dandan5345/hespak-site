@@ -409,18 +409,18 @@ export const translations: Record<string, Record<string, string>> = {
     'en': '📎 Pick tasks to send',
   },
   'chat_attach_file': {
-    'he': '📎 צרף קובץ (Excel, PDF, CSV, טקסט)',
-    'en': '📎 Attach file (Excel, PDF, CSV, text)',
+    'he': '📎 צרף קובץ (PDF, Office, CSV, טקסט)',
+    'en': '📎 Attach file (PDF, Office, CSV, text)',
   },
   'chat_file_remove': { 'he': 'הסר קובץ', 'en': 'Remove file' },
-  'chat_file_parsing': { 'he': '⏳ מנתח קובץ…', 'en': '⏳ Parsing file…' },
+  'chat_file_parsing': { 'he': '⏳ מכין קובץ…', 'en': '⏳ Preparing file…' },
   'chat_file_caption_placeholder': {
     'he': '💬 מה לעשות עם הקובץ? (אופציונלי)',
     'en': '💬 What to do with the file? (optional)',
   },
   'chat_file_parse_error': {
-    'he': '📎 לא הצלחתי לקרוא את הקובץ. נסה קובץ אחר.',
-    'en': '📎 I couldn\'t read that file. Try a different one.',
+    'he': '📎 לא הצלחתי להכין את הקובץ לשליחה. נסה קובץ אחר.',
+    'en': '📎 I couldn\'t prepare that file. Try a different one.',
   },
   'chat_attach_image': {
     'he': '🖼️ צרף תמונה (נשלחת ל-Gemini)',

@@ -1,14 +1,16 @@
 import type { ChatTokenUsage } from '../state/types';
 
-/** A single content part within a chat turn. Mirrors the OpenAI/Gemini
- * multimodal content format: text parts and image parts. */
+/** A single content part within a chat turn. Text/image parts keep the
+ * OpenAI-compatible chat shape, and file parts carry raw base64 data URLs for
+ * providers that support direct document input. */
 export type ChatContentPart =
   | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
+  | { type: 'image_url'; image_url: { url: string } }
+  | { type: 'file'; file: { filename: string; file_data: string } };
 
 /** One turn in the AI conversation. Mirrors ChatTurn in ai_chat_service.dart.
  * `content` is a string for plain-text turns (the common case) or an array of
- * content parts for multimodal turns (e.g. an image + caption to Gemini). */
+ * content parts for multimodal turns (e.g. an image/PDF + caption). */
 export interface ChatTurn {
   role: 'system' | 'user' | 'assistant';
   content: string | ChatContentPart[];
