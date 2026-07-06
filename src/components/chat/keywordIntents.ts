@@ -35,7 +35,9 @@ const WRITE_ACTIONS = [
 ];
 const READ_ACTIONS = [
   'מה יש', 'תראה', 'להראות', 'הצג', 'תציג', 'יש לי', 'תבדוק', 'לבדוק', 'בדוק', 'מתי',
-  'show', 'check', 'look', 'when', 'list',
+  'תקרא', 'קרא', 'לקרוא', 'תקריא', 'תסכם', 'סכם', 'לסכם', 'תפרט', 'פרט', 'לפרט',
+  'תחזיר', 'החזר', 'תשלוף', 'שלוף', 'תציג לי', 'תראה לי',
+  'show', 'check', 'look', 'when', 'list', 'read', 'recite', 'summarize', 'detail',
 ];
 
 const TASK_SUBJECTS = ['משימה', 'משימות', 'מטלה', 'מטלות', 'תרגיל', 'שיעורי בית', 'assignment', 'task', 'todo', 'to-do', 'homework'];
@@ -44,7 +46,8 @@ const TASK_ACTIONS = [
   'תערוך', 'לערוך', 'ערוך', 'תשנה', 'לשנות', 'שנה', 'תמחק', 'למחוק', 'מחק',
   'תזכיר', 'להזכיר', 'צריך', 'צריכה', 'לעשות', 'להגיש', 'לסיים', 'סיים', 'להכין', 'הכן',
   'יש לי', 'מה יש', 'אילו', 'איזה', 'תראה', 'הצג',
-  'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'remind', 'need to', 'submit', 'finish', 'prepare', 'show', 'which', 'list',
+  'תקרא', 'קרא', 'לקרוא', 'תסכם', 'סכם', 'תפרט', 'פרט', 'תחזיר', 'החזר', 'תשלוף', 'שלוף',
+  'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'remind', 'need to', 'submit', 'finish', 'prepare', 'show', 'which', 'list', 'read', 'summarize',
 ];
 
 const COURSE_SUBJECTS = ['קורס', 'קורסים', 'מקצוע', 'מקצועות', 'סמסטר', 'semester', 'course', 'courses', 'subject'];
@@ -52,7 +55,8 @@ const COURSE_ACTIONS = [
   'תיצור', 'צור', 'ליצור', 'תוסיף', 'להוסיף', 'הוסף', 'תעדכן', 'לעדכן', 'עדכן',
   'תערוך', 'לערוך', 'ערוך', 'תשנה', 'לשנות', 'שנה', 'תמחק', 'למחוק', 'מחק',
   'תפתח', 'פתח', 'לפתוח', 'יש לי', 'אילו', 'איזה',
-  'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'open', 'which',
+  'תקרא', 'קרא', 'לקרוא', 'תסכם', 'סכם', 'תפרט', 'פרט', 'תחזיר', 'החזר', 'תשלוף', 'שלוף',
+  'create', 'add', 'edit', 'update', 'change', 'delete', 'remove', 'open', 'which', 'read', 'summarize',
 ];
 
 const SMART_NOTIFICATION_TERMS = [

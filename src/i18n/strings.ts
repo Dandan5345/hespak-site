@@ -450,6 +450,18 @@ export const translations: Record<string, Record<string, string>> = {
     'he': '🙏 אופס, משהו השתבש. נסה שוב',
     'en': '🙏 Oops, something went wrong. Try again',
   },
+  'chat_empty_reply': {
+    'he': '🤔 לא הצלחתי לקבל תשובה. נסה שוב?',
+    'en': '🤔 I couldn\'t get a reply. Try again?',
+  },
+  'chat_schedule_lookup_found': {
+    'he': '📅 מצאתי {count} אירועים ב-{date}',
+    'en': '📅 Found {count} events on {date}',
+  },
+  'chat_schedule_lookup_empty': {
+    'he': '📅 אין כלום בלו״ז ב-{date} — היום פנוי',
+    'en': '📅 Nothing on the schedule for {date} — free day',
+  },
   'chat_quota_exhausted': {
     'he': '🪙 אין לך מספיק קרדיטי שיחה כדי להמשיך. ניתן לצפות בפרסומת או לרכוש חבילה.',
     'en': '🪙 You don\'t have enough chat credits to continue. Watch an ad or buy a package.',

@@ -664,7 +664,7 @@ export function useChatEngine() {
           const parsed = extractJson(replyText);
 
           // Read-only schedule lookup: answer locally, feed back, let the model continue.
-          if (parsed && parsed.tool === 'get_schedule' && round < MAX_TOOL_ROUNDS) {
+          if (parsed && parsed.tool === 'get_schedule') {
             const lookup = scheduleForDate(
               typeof parsed.date === 'string' ? parsed.date : undefined,
               typeof parsed.endDate === 'string' ? parsed.endDate : undefined,
@@ -672,8 +672,20 @@ export function useChatEngine() {
             );
             const encoded = JSON.stringify(lookup);
             addPromptReadContext(t('chat_prompt_read_schedule_result'), encoded, t('chat_status_prompt_schedule_result'));
-            appendAiContextTurn({ role: 'user', content: encoded });
-            continue;
+            // If we still have rounds, feed the data back and let the model
+            // phrase the answer. On the last round, fall back to a friendly
+            // summary built from the lookup so the user never sees raw JSON.
+            if (round < MAX_TOOL_ROUNDS) {
+              appendAiContextTurn({ role: 'user', content: encoded });
+              continue;
+            }
+            const count = Array.isArray(lookup.events) ? lookup.events.length : 0;
+            const when = typeof parsed.date === 'string' ? parsed.date : '';
+            const fallback = count > 0
+              ? `${t('chat_schedule_lookup_found').replace('{count}', String(count)).replace('{date}', when)}`
+              : t('chat_schedule_lookup_empty').replace('{date}', when);
+            revealReply(fallback, currentEffort, { tokenUsage: usage });
+            return;
           }
 
           const action = typeof parsed?.action === 'string' ? parsed.action : undefined;
@@ -707,7 +719,14 @@ export function useChatEngine() {
 
           // Plain conversational reply — either free text, or a JSON envelope
           // carrying just `{"message": "..."}` with no recognized action.
-          revealReply(rawMessage || replyText, currentEffort, { tokenUsage: usage });
+          // Guard against empty replies (model hiccup) and against showing the
+          // user raw JSON when the envelope had no usable message/action.
+          const visibleReply = rawMessage || replyText;
+          if (visibleReply.trim()) {
+            revealReply(visibleReply, currentEffort, { tokenUsage: usage });
+          } else {
+            pushAiMessage(t('chat_empty_reply'), { tokenUsage: usage });
+          }
           return;
         }
       } catch (e) {
