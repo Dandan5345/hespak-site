@@ -10,7 +10,7 @@ import { ReasoningSheet } from '../components/chat/ReasoningSheet';
 import { AgentAvatar } from '../components/chat/AgentAvatar';
 import { BottomSheet } from '../components/chat/BottomSheet';
 import { TaskPickerSheet } from '../components/chat/TaskPickerSheet';
-import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TrashIcon } from '../components/chat/icons';
+import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TaskListIcon, TrashIcon } from '../components/chat/icons';
 import { ProgressRing } from '../components/focus/ProgressRing';
 import { reasoningEmoji, type ChatModelFamily } from '../state/types';
 
@@ -41,7 +41,7 @@ export default function Chat() {
   const navigate = useNavigate();
 
   const {
-    messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, attachTasks,
+    messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, sendWithFile, parsingFile, attachTasks,
     confirmPending, rejectPending, undoChange, newChat, summarizeChat, sessions, restoreSession, deleteSession,
     agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt,
   } = useChatEngine();
@@ -54,16 +54,29 @@ export default function Chat() {
   const [pendingModelFamily, setPendingModelFamily] = useState<ChatModelFamily | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  // Pending file attachment: once chosen, a chip shows the file name and the
+  // user can add an optional caption before sending. null = no file staged.
+  const [stagedFile, setStagedFile] = useState<File | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length, typing, streamingText]);
 
   const handleSend = () => {
-    if (!input.trim() || typing || noCredits || memoryFull) return;
+    if (typing || noCredits || memoryFull) return;
+    // If a file is staged, send it with the current input as the caption.
+    if (stagedFile) {
+      void sendWithFile(stagedFile, input);
+      setStagedFile(null);
+      setInput('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+      return;
+    }
+    if (!input.trim()) return;
     sendText(input);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -75,6 +88,18 @@ export default function Chat() {
       handleSend();
     }
   };
+
+  // File picker: triggered by the 📎 button. Accepts Excel/PDF/CSV/text.
+  const openFilePicker = () => {
+    fileInputRef.current?.click();
+  };
+  const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) setStagedFile(f);
+    // Reset so picking the same file again still fires onChange.
+    e.target.value = '';
+  };
+  const canSend = (!!input.trim() || !!stagedFile) && !typing && !noCredits && !memoryFull && !parsingFile;
 
   const openRename = () => {
     setRenameValue(agentName);
@@ -434,42 +459,91 @@ export default function Chat() {
             </div>
           </div>
         ) : (
-          <div className="flex items-end gap-2">
-            <button
-              onClick={() => setShowTaskPicker(true)}
-              title={t('chat_pick_tasks')}
-              disabled={typing}
-              className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
-              style={iconBtn}
-            >
-              <PaperclipIcon />
-            </button>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              dir={dir}
-              onChange={(e) => {
-                setInput(e.target.value);
-                e.target.style.height = 'auto';
-                e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-              }}
-              onKeyDown={handleKeyDown}
-              placeholder={t('chat_placeholder')}
-              rows={1}
-              className="flex-1 resize-none rounded-[24px] px-4 py-2.5 text-[15px] outline-none"
-              style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}`, color: tokens.text, maxHeight: 120 }}
-            />
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || typing}
-              className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
-              style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent, boxShadow: tokens.glow !== 'none' ? tokens.glow : undefined }}
-              aria-label={t('chat_placeholder')}
-            >
-              <span style={{ transform: dir === 'rtl' ? 'scaleX(-1)' : undefined, display: 'inline-flex' }}>
-                <SendIcon />
-              </span>
-            </button>
+          <div className="flex flex-col gap-2">
+            {/* Staged-file chip: shows the chosen file name with a remove (×)
+                button. Replaces the separate task-picker button row when a
+                file is waiting to be sent. */}
+            {stagedFile && (
+              <div
+                className="flex items-center gap-2 self-start rounded-full ps-3 pe-2 py-1.5 text-[13px] font-semibold max-w-full"
+                style={{ background: tokens.accentSoft, color: tokens.accent, border: `1px solid ${tokens.accent}55` }}
+              >
+                <PaperclipIcon size={14} />
+                <span className="truncate">{stagedFile.name}</span>
+                <span style={{ color: tokens.textDim }} className="text-xs font-normal">
+                  {(stagedFile.size / 1024).toFixed(stagedFile.size < 10240 ? 1 : 0)} KB
+                </span>
+                <button
+                  onClick={() => setStagedFile(null)}
+                  disabled={parsingFile}
+                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
+                  style={{ background: `${tokens.accent}22`, color: tokens.accent }}
+                  aria-label={t('chat_file_remove')}
+                  title={t('chat_file_remove')}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            {parsingFile && (
+              <div className="flex items-center gap-2 self-start text-[13px] font-semibold" style={{ color: tokens.accent }}>
+                <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                {t('chat_file_parsing')}
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv,.pdf,.txt,.md,.json,.xml,.html,.htm"
+                onChange={onFileChosen}
+                className="hidden"
+              />
+              <button
+                onClick={openFilePicker}
+                title={t('chat_attach_file')}
+                disabled={typing || parsingFile}
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
+                style={iconBtn}
+              >
+                <PaperclipIcon />
+              </button>
+              <button
+                onClick={() => setShowTaskPicker(true)}
+                title={t('chat_pick_tasks')}
+                disabled={typing}
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
+                style={iconBtn}
+              >
+                <TaskListIcon />
+              </button>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                dir={dir}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={stagedFile ? t('chat_file_caption_placeholder') : t('chat_placeholder')}
+                rows={1}
+                className="flex-1 resize-none rounded-[24px] px-4 py-2.5 text-[15px] outline-none"
+                style={{ background: tokens.surface, border: `${tokens.cardBorderWidth}px solid ${tokens.cardBorderColor}`, color: tokens.text, maxHeight: 120 }}
+              />
+              <button
+                onClick={handleSend}
+                disabled={!canSend}
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
+                style={{ background: 'var(--sf-accent-gradient)', color: tokens.onAccent, boxShadow: tokens.glow !== 'none' ? tokens.glow : undefined }}
+                aria-label={t('chat_placeholder')}
+              >
+                <span style={{ transform: dir === 'rtl' ? 'scaleX(-1)' : undefined, display: 'inline-flex' }}>
+                  <SendIcon />
+                </span>
+              </button>
+            </div>
           </div>
         )}
       </div>

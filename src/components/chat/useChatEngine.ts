@@ -9,6 +9,7 @@ import { PACK_ORDER, PACKS_NEEDING_ENTITIES, packsForText, isSmartNotificationIn
 import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
+import { parseFile, type ParsedFile } from './fileParser';
 import { useCloudChat, type CloudChatMessage, type CloudChatSession, type CloudUndoSnapshots } from './useCloudChat';
 import type { LocalChatMessage } from './types';
 import type { CloudAppState } from '../../state/types';
@@ -331,13 +332,13 @@ export function useChatEngine() {
       contextTokenAdjustmentForMessages(stored),
     );
     const restored = stored.map((m) => ({
-        id: genId(),
-        fromUser: m.fromUser,
-        text: m.text,
-        actionKeys: m.actionKeys,
-        inputTokens: m.inputTokens ?? null,
-        tokenUsage: m.tokenUsage ?? null,
-      }));
+      id: genId(),
+      fromUser: m.fromUser,
+      text: m.text,
+      actionKeys: m.actionKeys,
+      inputTokens: m.inputTokens ?? null,
+      tokenUsage: m.tokenUsage ?? null,
+    }));
     setMessages(messagesWithLiveUndo(restored));
   }, [clearReveal, cloudUndoSnapshots, messagesWithLiveUndo, setAiContext]);
 
@@ -645,14 +646,14 @@ export function useChatEngine() {
           }
           const usage = result.usage
             ? applyAuthoritativeCharge(applyHistoryDiscount(
-                {
-                  ...result.usage,
-                  promptReadTokens: visiblePromptReadTokens,
-                  promptReadDescriptions: visiblePromptReadDescriptions,
-                  promptReadBreakdown: visiblePromptReadBreakdown,
-                },
-                currentEffort,
-              ), result.charged)
+              {
+                ...result.usage,
+                promptReadTokens: visiblePromptReadTokens,
+                promptReadDescriptions: visiblePromptReadDescriptions,
+                promptReadBreakdown: visiblePromptReadBreakdown,
+              },
+              currentEffort,
+            ), result.charged)
             : undefined;
           const replyText = result.text;
           setTypingStatus(null);
@@ -761,6 +762,43 @@ export function useChatEngine() {
       void runAiLoop(effort);
     },
     [typing, memoryFull, ensureLazyPacks, runAiLoop, effort, appendAiContextTurn],
+  );
+
+  // Attach a user-uploaded file (Excel/PDF/CSV/text) to the chat. The file is
+  // parsed to text in the browser, then injected as a user turn so every
+  // provider (DeepSeek/GPT/Gemini) can read it — no multimodal API needed.
+  // The optional `note` is the user's own caption ("מה יש בקובץ הזה?").
+  const [parsingFile, setParsingFile] = useState(false);
+  const sendWithFile = useCallback(
+    async (file: File, note: string) => {
+      if (typing || memoryFull || parsingFile) return;
+      setParsingFile(true);
+      let parsed: ParsedFile;
+      try {
+        parsed = await parseFile(file);
+      } catch (e) {
+        setParsingFile(false);
+        pushAiMessage(e instanceof Error ? `📎 ${e.message}` : t('chat_file_parse_error'));
+        return;
+      }
+      setParsingFile(false);
+      const caption = note.trim();
+      // What the user sees in the bubble: the file name + summary + caption.
+      const visibleText = `📎 ${parsed.name} · ${parsed.summary}${caption ? `\n${caption}` : ''}`;
+      // What the model sees: a clear delimiter + the extracted content + the
+      // user's question, so it knows exactly what's file content vs. message.
+      const modelText =
+        `[המשתמש צירף קובץ: ${parsed.name} (${parsed.summary})]\n` +
+        `תוכן הקובץ:\n"""\n${parsed.text}\n"""` +
+        (caption ? `\n\nבקשת המשתמש: ${caption}` : '\n\n(המשתמש לא צירף בקשה מפורשת — סכם/נתח את התוכן.)');
+      // The file content may reference tasks/schedule concepts — load packs so
+      // the model can act if the user asks to turn the file into tasks etc.
+      ensureLazyPacks(caption || parsed.name);
+      setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: visibleText, inputTokens: estimateTokens(modelText) }]);
+      appendAiContextTurn({ role: 'user', content: modelText });
+      void runAiLoop(effort);
+    },
+    [typing, memoryFull, parsingFile, ensureLazyPacks, pushAiMessage, t, appendAiContextTurn, runAiLoop, effort],
   );
 
   // Attach existing tasks for the AI to weave into the schedule — the web
@@ -982,6 +1020,8 @@ export function useChatEngine() {
       geminiPro,
       setGeminiPro,
       sendText,
+      sendWithFile,
+      parsingFile,
       attachTasks,
       confirmPending,
       rejectPending,
@@ -999,6 +1039,6 @@ export function useChatEngine() {
       memoryFull,
       tt,
     }),
-    [visibleMessages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
+    [visibleMessages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, sendWithFile, parsingFile, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
   );
 }

@@ -73,6 +73,19 @@ export function PaperclipIcon({ size = 19, className }: IconProps) {
   );
 }
 
+export function TaskListIcon({ size = 19, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <path d="M9 6h11" />
+      <path d="M9 12h11" />
+      <path d="M9 18h11" />
+      <path d="M4 6h.01" />
+      <path d="M4 12h.01" />
+      <path d="M4 18h.01" />
+    </svg>
+  );
+}
+
 export function TrashIcon({ size = 16, className }: IconProps) {
   return (
     <svg {...base(size)} className={className}>

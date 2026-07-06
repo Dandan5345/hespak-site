@@ -408,6 +408,20 @@ export const translations: Record<string, Record<string, string>> = {
     'he': '📎 בחר משימות לשליחה',
     'en': '📎 Pick tasks to send',
   },
+  'chat_attach_file': {
+    'he': '📎 צרף קובץ (Excel, PDF, CSV, טקסט)',
+    'en': '📎 Attach file (Excel, PDF, CSV, text)',
+  },
+  'chat_file_remove': { 'he': 'הסר קובץ', 'en': 'Remove file' },
+  'chat_file_parsing': { 'he': '⏳ מנתח קובץ…', 'en': '⏳ Parsing file…' },
+  'chat_file_caption_placeholder': {
+    'he': '💬 מה לעשות עם הקובץ? (אופציונלי)',
+    'en': '💬 What to do with the file? (optional)',
+  },
+  'chat_file_parse_error': {
+    'he': '📎 לא הצלחתי לקרוא את הקובץ. נסה קובץ אחר.',
+    'en': '📎 I couldn\'t read that file. Try a different one.',
+  },
   'chat_attach_send': { 'he': '🤖 שלח ל-AI', 'en': '🤖 Send to AI' },
   'chat_task_created': { 'he': '✅ יצרתי את המשימה', 'en': '✅ Task created' },
   'chat_task_updated': { 'he': '✅ עדכנתי את המשימה', 'en': '✅ Task updated' },
