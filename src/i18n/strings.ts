@@ -422,6 +422,18 @@ export const translations: Record<string, Record<string, string>> = {
     'he': '📎 לא הצלחתי לקרוא את הקובץ. נסה קובץ אחר.',
     'en': '📎 I couldn\'t read that file. Try a different one.',
   },
+  'chat_attach_image': {
+    'he': '🖼️ צרף תמונה (נשלחת ל-Gemini)',
+    'en': '🖼️ Attach image (sent to Gemini)',
+  },
+  'chat_image_not_image': {
+    'he': '🖼️ הקובץ לא תמונה. השתמש בכפתור הקובץ למסמכים.',
+    'en': '🖼️ That\'s not an image. Use the file button for documents.',
+  },
+  'chat_image_parse_error': {
+    'he': '🖼️ לא הצלחתי לעבד את התמונה. נסה תמונה אחרת.',
+    'en': '🖼️ I couldn\'t process that image. Try a different one.',
+  },
   'chat_attach_send': { 'he': '🤖 שלח ל-AI', 'en': '🤖 Send to AI' },
   'chat_task_created': { 'he': '✅ יצרתי את המשימה', 'en': '✅ Task created' },
   'chat_task_updated': { 'he': '✅ עדכנתי את המשימה', 'en': '✅ Task updated' },

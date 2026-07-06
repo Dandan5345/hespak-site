@@ -10,6 +10,8 @@ import { buildEntitiesContext, scheduleForDate } from './entitiesContext';
 import { applyMutationActions, describeActions, mutationActionsFromJson } from './chatActions';
 import { extractJson } from './extractJson';
 import { parseFile, type ParsedFile } from './fileParser';
+import { processImage, isImageFile, type ImageProcessError } from './imageUtils';
+import type { ChatContentPart } from '../../services/aiChat';
 import { useCloudChat, type CloudChatMessage, type CloudChatSession, type CloudUndoSnapshots } from './useCloudChat';
 import type { LocalChatMessage } from './types';
 import type { CloudAppState } from '../../state/types';
@@ -615,14 +617,17 @@ export function useChatEngine() {
   }, []);
 
   const runAiLoop = useCallback(
-    async (currentEffort: ReasoningEffort) => {
+    async (currentEffort: ReasoningEffort, overrideFamily?: ChatModelFamily) => {
+      // For image turns we force Gemini (the only vision-capable provider).
+      const effectiveFamily = overrideFamily ?? modelFamily;
+      const effectiveGeminiPro = overrideFamily === 'gemini' ? geminiPro : geminiPro;
       setTyping(true);
       try {
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
           if (!systemPromptTokensTrackedRef.current) {
             systemPromptTokensTrackedRef.current = true;
             const today = new Date().toISOString().slice(0, 10);
-            const premiumPrompt = isProEffort(currentEffort) || (modelFamily === 'gemini' && geminiPro);
+            const premiumPrompt = isProEffort(currentEffort) || (effectiveFamily === 'gemini' && effectiveGeminiPro);
             const sysPrompt = systemPrompt(today, data.agentName, premiumPrompt);
             const memory = data.agentMemory.trim() ? `[זיכרון אישי קבוע על המשתמש]\n${data.agentMemory.trim()}` : '';
             addPromptReadContext(t('chat_prompt_read_system'), memory ? `${sysPrompt}\n${memory}` : sysPrompt, t('chat_status_prompt_system'));
@@ -637,7 +642,7 @@ export function useChatEngine() {
           const turns = buildMessages();
           const result = await completeChat(turns, {
             reasoningEffort: reasoningApiValue(currentEffort),
-            provider: reasoningProvider(currentEffort, modelFamily, geminiPro),
+            provider: reasoningProvider(currentEffort, effectiveFamily, effectiveGeminiPro),
             idToken: await idToken(),
             displayName,
           });
@@ -799,6 +804,56 @@ export function useChatEngine() {
       void runAiLoop(effort);
     },
     [typing, memoryFull, parsingFile, ensureLazyPacks, pushAiMessage, t, appendAiContextTurn, runAiLoop, effort],
+  );
+
+  // Attach a user-uploaded image to the chat. Images go ONLY to Gemini (the
+  // only provider with vision support here) — if the user is on DeepSeek/GPT,
+  // we switch to Gemini for this one turn so the image actually gets read.
+  // The image is resized client-side and sent as a base64 data URL inside a
+  // multimodal content array (OpenAI/Gemini format).
+  const sendWithImage = useCallback(
+    async (file: File, note: string) => {
+      if (typing || memoryFull || parsingFile) return;
+      if (!isImageFile(file)) {
+        pushAiMessage(t('chat_image_not_image'));
+        return;
+      }
+      setParsingFile(true);
+      let dataUrl: string;
+      let width: number;
+      let height: number;
+      try {
+        const processed = await processImage(file);
+        dataUrl = processed.dataUrl;
+        width = processed.width;
+        height = processed.height;
+      } catch (e) {
+        setParsingFile(false);
+        pushAiMessage(e instanceof Error ? `🖼️ ${e.message}` : t('chat_image_parse_error'));
+        return;
+      }
+      setParsingFile(false);
+      const caption = note.trim();
+      // What the user sees in the bubble: a thumbnail + caption.
+      const visibleText = `🖼️ ${file.name} · ${width}×${height}${caption ? `\n${caption}` : ''}`;
+      // What the model sees: multimodal content (image + text). Gemini reads
+      // the image_url directly; the text part carries the caption/instruction.
+      const parts: ChatContentPart[] = [
+        { type: 'image_url', image_url: { url: dataUrl } },
+        {
+          type: 'text',
+          text: caption || 'המשתמש שלח תמונה. תאר/נתח אותה וענה לפי הבקשה.',
+        },
+      ];
+      // Images need Gemini — force it for this turn if the user is elsewhere.
+      const imageEffort = modelFamily === 'gemini' ? effort : 'medium';
+      const imageFamily = 'gemini' as ChatModelFamily;
+      ensureLazyPacks(caption || file.name);
+      setMessages((prev) => [...prev, { id: genId(), fromUser: true, text: visibleText, inputTokens: 1500 }]);
+      appendAiContextTurn({ role: 'user', content: parts });
+      void runAiLoop(imageEffort, imageFamily);
+    },
+    [typing, memoryFull, parsingFile, ensureLazyPacks, pushAiMessage, t, appendAiContextTurn, runAiLoop, effort, modelFamily],
   );
 
   // Attach existing tasks for the AI to weave into the schedule — the web
@@ -1021,6 +1076,7 @@ export function useChatEngine() {
       setGeminiPro,
       sendText,
       sendWithFile,
+      sendWithImage,
       parsingFile,
       attachTasks,
       confirmPending,
@@ -1039,6 +1095,6 @@ export function useChatEngine() {
       memoryFull,
       tt,
     }),
-    [visibleMessages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, sendWithFile, parsingFile, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
+    [visibleMessages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, sendWithFile, sendWithImage, parsingFile, attachTasks, confirmPending, rejectPending, undoChange, newChat, summarizeChat, cloudChatSessions, restoreSession, deleteSession, agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt],
   );
 }

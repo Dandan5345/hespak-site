@@ -1,9 +1,17 @@
 import type { ChatTokenUsage } from '../state/types';
 
-/** One turn in the AI conversation. Mirrors ChatTurn in ai_chat_service.dart. */
+/** A single content part within a chat turn. Mirrors the OpenAI/Gemini
+ * multimodal content format: text parts and image parts. */
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+/** One turn in the AI conversation. Mirrors ChatTurn in ai_chat_service.dart.
+ * `content` is a string for plain-text turns (the common case) or an array of
+ * content parts for multimodal turns (e.g. an image + caption to Gemini). */
 export interface ChatTurn {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ChatContentPart[];
 }
 
 export interface ChatCompletionResult {

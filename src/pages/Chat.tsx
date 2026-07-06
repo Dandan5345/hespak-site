@@ -10,9 +10,10 @@ import { ReasoningSheet } from '../components/chat/ReasoningSheet';
 import { AgentAvatar } from '../components/chat/AgentAvatar';
 import { BottomSheet } from '../components/chat/BottomSheet';
 import { TaskPickerSheet } from '../components/chat/TaskPickerSheet';
-import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TaskListIcon, TrashIcon } from '../components/chat/icons';
+import { SendIcon, HistoryIcon, NewChatIcon, EditIcon, PaperclipIcon, TaskListIcon, ImageIcon, TrashIcon } from '../components/chat/icons';
 import { ProgressRing } from '../components/focus/ProgressRing';
 import { reasoningEmoji, type ChatModelFamily } from '../state/types';
+import { isImageFile } from '../components/chat/imageUtils';
 
 const REASONING_LABEL_KEY = {
   cheap: 'reasoning_cheap',
@@ -41,7 +42,7 @@ export default function Chat() {
   const navigate = useNavigate();
 
   const {
-    messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, sendWithFile, parsingFile, attachTasks,
+    messages, typing, typingStatus, streamingText, effort, setEffort, modelFamily, setModelFamily, geminiPro, setGeminiPro, sendText, sendWithFile, sendWithImage, parsingFile, attachTasks,
     confirmPending, rejectPending, undoChange, newChat, summarizeChat, sessions, restoreSession, deleteSession,
     agentDisplayName, quotaRemaining, noCredits, contextTokens, contextLimit, memoryFull, tt,
   } = useChatEngine();
@@ -61,6 +62,7 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -70,7 +72,12 @@ export default function Chat() {
     if (typing || noCredits || memoryFull) return;
     // If a file is staged, send it with the current input as the caption.
     if (stagedFile) {
-      void sendWithFile(stagedFile, input);
+      // Images go to Gemini via the multimodal path; other files via text.
+      if (isImageFile(stagedFile)) {
+        void sendWithImage(stagedFile, input);
+      } else {
+        void sendWithFile(stagedFile, input);
+      }
       setStagedFile(null);
       setInput('');
       if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -89,9 +96,13 @@ export default function Chat() {
     }
   };
 
-  // File picker: triggered by the 📎 button. Accepts Excel/PDF/CSV/text.
+  // File picker: triggered by the 📎 button. Accepts Excel/PDF/CSV/text/images.
   const openFilePicker = () => {
     fileInputRef.current?.click();
+  };
+  // Image picker: triggered by the 🖼️ button. Images are sent to Gemini.
+  const openImagePicker = () => {
+    imageInputRef.current?.click();
   };
   const onFileChosen = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -468,11 +479,16 @@ export default function Chat() {
                 className="flex items-center gap-2 self-start rounded-full ps-3 pe-2 py-1.5 text-[13px] font-semibold max-w-full"
                 style={{ background: tokens.accentSoft, color: tokens.accent, border: `1px solid ${tokens.accent}55` }}
               >
-                <PaperclipIcon size={14} />
+                {isImageFile(stagedFile) ? <ImageIcon size={14} /> : <PaperclipIcon size={14} />}
                 <span className="truncate">{stagedFile.name}</span>
                 <span style={{ color: tokens.textDim }} className="text-xs font-normal">
                   {(stagedFile.size / 1024).toFixed(stagedFile.size < 10240 ? 1 : 0)} KB
                 </span>
+                {isImageFile(stagedFile) && modelFamily !== 'gemini' && (
+                  <span style={{ color: tokens.accent }} className="text-xs font-bold">
+                    · Gemini
+                  </span>
+                )}
                 <button
                   onClick={() => setStagedFile(null)}
                   disabled={parsingFile}
@@ -499,6 +515,13 @@ export default function Chat() {
                 onChange={onFileChosen}
                 className="hidden"
               />
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/jpg,image/webp,image/gif,image/bmp"
+                onChange={onFileChosen}
+                className="hidden"
+              />
               <button
                 onClick={openFilePicker}
                 title={t('chat_attach_file')}
@@ -507,6 +530,15 @@ export default function Chat() {
                 style={iconBtn}
               >
                 <PaperclipIcon />
+              </button>
+              <button
+                onClick={openImagePicker}
+                title={t('chat_attach_image')}
+                disabled={typing || parsingFile}
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50 sf-press"
+                style={iconBtn}
+              >
+                <ImageIcon />
               </button>
               <button
                 onClick={() => setShowTaskPicker(true)}
