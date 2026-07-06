@@ -844,6 +844,14 @@ export const translations: Record<string, Record<string, string>> = {
     'he': 'ה-AI קורא את הלו״ז שמצא לאותו יום',
     'en': 'AI is reading the schedule it found for that day',
   },
+  'chat_status_retrying_ai': {
+    'he': 'ה-AI מנסה שוב מאחורי הקלעים',
+    'en': 'AI is retrying quietly',
+  },
+  'chat_status_repairing_json': {
+    'he': 'ה-AI מתקן את תשובת הפעולה',
+    'en': 'AI is fixing the action response',
+  },
   'chat_prompt_read_system': {
     'he': 'את הפורמט הראשוני וההנחיות',
     'en': 'the initial format and instructions',

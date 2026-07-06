@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { completeChat, QuotaExhaustedError, type ChatTurn } from '../../services/aiChat';
-import { promptPackInstruction, summarizeChatInstruction, systemPrompt, type ChatPromptPack } from '../../services/chatPrompts';
+import { completeChat, QuotaExhaustedError, type ChatCompletionResult, type ChatTurn } from '../../services/aiChat';
+import { promptPackInstruction, retryInvalidJsonInstruction, summarizeChatInstruction, systemPrompt, type ChatPromptPack } from '../../services/chatPrompts';
 import { useAuth } from '../../state/AuthContext';
 import { useData } from '../../state/DataContext';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -106,6 +106,95 @@ const EXTRA: Record<string, Record<string, string>> = {
 /** Max additional `get_schedule` tool round-trips before we give up and treat
  * whatever came back as the final reply (avoids an infinite loop). */
 const MAX_TOOL_ROUNDS = 3;
+const MAX_PROVIDER_RETRIES = 2;
+const MAX_JSON_REPAIR_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 450;
+
+type CompleteChatOptions = NonNullable<Parameters<typeof completeChat>[1]>;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientAiFailureReply(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return true;
+  if (normalized.length > 180) return false;
+  return [
+    'משהו השתבש',
+    'נסה שוב מאוחר יותר',
+    'נסו שוב מאוחר יותר',
+    'something went wrong',
+    'try again later',
+    'internal error',
+    'server error',
+    'upstream error',
+    'an error occurred',
+    'i encountered an error',
+  ].some((needle) => normalized.includes(needle));
+}
+
+function looksLikeJsonReply(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.includes('{') && !trimmed.startsWith('```')) return false;
+  return /["'“”]?(action|actions|tool|message)["'“”]?\s*:/i.test(trimmed);
+}
+
+function isIsoDate(value: unknown): boolean {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function parsedJsonNeedsRepair(parsed: Record<string, unknown> | null): boolean {
+  if (!parsed) return false;
+  if (typeof parsed.tool === 'string') {
+    if (parsed.tool !== 'get_schedule') return true;
+    return !isIsoDate(parsed.date) || ('endDate' in parsed && parsed.endDate != null && !isIsoDate(parsed.endDate));
+  }
+  if (Array.isArray(parsed.actions)) {
+    const actionObjects = parsed.actions.filter((item) => !!item && typeof item === 'object').length;
+    const validMutations = mutationActionsFromJson(parsed).length;
+    return actionObjects === 0 || validMutations !== actionObjects;
+  }
+  if (typeof parsed.action === 'string') {
+    if (parsed.action === 'set_agent_name') return false;
+    if (parsed.action === 'save_memory') return typeof parsed.memory !== 'string';
+    return mutationActionsFromJson(parsed).length === 0;
+  }
+  return false;
+}
+
+function shouldRepairJsonReply(text: string, parsed: Record<string, unknown> | null): boolean {
+  if (!parsed) return looksLikeJsonReply(text);
+  return parsedJsonNeedsRepair(parsed);
+}
+
+async function completeChatReliably(
+  messages: ChatTurn[],
+  opts: CompleteChatOptions,
+  handlers: {
+    onRetry?: () => void;
+    onResult?: (result: ChatCompletionResult) => void;
+  } = {},
+): Promise<ChatCompletionResult> {
+  for (let attempt = 0; attempt <= MAX_PROVIDER_RETRIES; attempt++) {
+    try {
+      const result = await completeChat(messages, opts);
+      handlers.onResult?.(result);
+      if (isTransientAiFailureReply(result.text)) {
+        if (attempt >= MAX_PROVIDER_RETRIES) throw new Error('AI returned a transient failure reply');
+        handlers.onRetry?.();
+        await sleep(RETRY_BASE_DELAY_MS * (attempt + 1));
+        continue;
+      }
+      return result;
+    } catch (e) {
+      if (e instanceof QuotaExhaustedError || attempt >= MAX_PROVIDER_RETRIES) throw e;
+      handlers.onRetry?.();
+      await sleep(RETRY_BASE_DELAY_MS * (attempt + 1));
+    }
+  }
+  throw new Error('AI retry failed');
+}
 
 function estimateTokens(text: string): number {
   if (!text) return 0;
@@ -320,6 +409,12 @@ export function useChatEngine() {
     undoSnapshotsRef.current = new Map(Object.entries(cloudUndoSnapshots));
     const seeded = new Set<ChatPromptPack>();
     for (const p of hint?.packs ?? []) {
+      if (p === 'misc') {
+        for (const legacyPack of ['focus', 'smartNotifications', 'identity', 'memory'] satisfies ChatPromptPack[]) {
+          seeded.add(legacyPack);
+        }
+        continue;
+      }
       if ((PACK_ORDER as string[]).includes(p)) seeded.add(p as ChatPromptPack);
     }
     let entities = hint?.entities ?? false;
@@ -448,12 +543,20 @@ export function useChatEngine() {
           return t('chat_prompt_read_schedule');
         case 'scheduleWrite':
           return t('chat_prompt_read_schedule_write');
+        case 'actionProtocol':
+          return t('chat_prompt_read_action');
         case 'tasks':
           return t('chat_prompt_read_tasks');
         case 'courses':
           return t('chat_prompt_read_courses');
-        case 'misc':
-          return t('chat_prompt_read_misc');
+        case 'focus':
+          return t('chat_prompt_read_focus');
+        case 'smartNotifications':
+          return t('chat_prompt_read_smart_notifications');
+        case 'identity':
+          return t('chat_prompt_read_identity');
+        case 'memory':
+          return t('chat_prompt_read_memory');
       }
     },
     [t],
@@ -466,12 +569,20 @@ export function useChatEngine() {
           return t('chat_status_prompt_schedule');
         case 'scheduleWrite':
           return t('chat_status_prompt_schedule_write');
+        case 'actionProtocol':
+          return t('chat_status_prompt_action');
         case 'tasks':
           return t('chat_status_prompt_tasks');
         case 'courses':
           return t('chat_status_prompt_courses');
-        case 'misc':
-          return t('chat_status_prompt_misc');
+        case 'focus':
+          return t('chat_status_prompt_focus');
+        case 'smartNotifications':
+          return t('chat_status_prompt_smart_notifications');
+        case 'identity':
+          return t('chat_status_prompt_identity');
+        case 'memory':
+          return t('chat_status_prompt_memory');
       }
     },
     [t],
@@ -570,9 +681,6 @@ export function useChatEngine() {
       addLoadedPack(pack);
       if (PACKS_NEEDING_ENTITIES.includes(pack)) includeEntityContextForPromptRead();
     }
-    // The misc pack itself is small, but managing reminders needs the live
-    // reminder list (ids) from the app data.
-    if (isSmartNotificationIntent(lower)) includeEntityContextForPromptRead();
   }, [addLoadedPack, includeEntityContextForPromptRead]);
 
   const buildMessages = useCallback((): ChatTurn[] => {
@@ -653,16 +761,18 @@ export function useChatEngine() {
           promptReadBreakdownRef.current = {};
 
           const turns = buildMessages();
-          const result = await completeChat(turns, {
+          const requestOptions: CompleteChatOptions = {
             reasoningEffort: reasoningApiValue(currentEffort),
             provider: reasoningProvider(currentEffort, effectiveFamily, effectiveGeminiPro),
             idToken: await idToken(),
             displayName,
-          });
-          if (result.remaining != null) {
-            data.applyTokenQuota({ remainingTokens: result.remaining });
-          }
-          const usage = result.usage
+          };
+          const trackRemaining = (result: ChatCompletionResult) => {
+            if (result.remaining != null) {
+              data.applyTokenQuota({ remainingTokens: result.remaining });
+            }
+          };
+          const usageFor = (result: ChatCompletionResult): ChatTokenUsage | undefined => result.usage
             ? applyAuthoritativeCharge(applyHistoryDiscount(
               {
                 ...result.usage,
@@ -673,14 +783,40 @@ export function useChatEngine() {
               currentEffort,
             ), result.charged)
             : undefined;
-          const replyText = result.text;
+
+          let result = await completeChatReliably(turns, requestOptions, {
+            onRetry: () => setTypingStatus(t('chat_status_retrying_ai')),
+            onResult: trackRemaining,
+          });
+          let usage = usageFor(result);
+          let replyText = result.text;
+          let parsed = extractJson(replyText);
+
+          for (let repairAttempt = 0; repairAttempt < MAX_JSON_REPAIR_RETRIES && shouldRepairJsonReply(replyText, parsed); repairAttempt++) {
+            setTypingStatus(t('chat_status_repairing_json'));
+            const repairTurns: ChatTurn[] = [
+              ...turns,
+              { role: 'assistant', content: replyText || '[empty assistant reply]' },
+              { role: 'user', content: retryInvalidJsonInstruction },
+            ];
+            result = await completeChatReliably(repairTurns, requestOptions, {
+              onRetry: () => setTypingStatus(t('chat_status_retrying_ai')),
+              onResult: trackRemaining,
+            });
+            usage = usageFor(result);
+            replyText = result.text;
+            parsed = extractJson(replyText);
+          }
+
+          if (shouldRepairJsonReply(replyText, parsed)) {
+            throw new Error('AI returned invalid JSON after repair attempts');
+          }
+
           setTypingStatus(null);
           appendAiContextTurn(
             { role: 'assistant', content: replyText },
             aiOutputContextTokens(replyText, usage),
           );
-
-          const parsed = extractJson(replyText);
 
           // Read-only schedule lookup: answer locally, feed back, let the model continue.
           if (parsed && parsed.tool === 'get_schedule') {

@@ -1,7 +1,8 @@
 // Decides which lazy instruction packs a user message needs, so each request
 // carries only the instructions it actually uses (token saving). The pack
-// structure is the web's five-pack layout (see services/chatPrompts.ts):
-// scheduleWrite, scheduleRead, tasks, courses, misc.
+// structure is the web's lazy-pack layout (see services/chatPrompts.ts):
+// actionProtocol, scheduleRead, scheduleWrite, tasks, courses, focus,
+// smartNotifications, identity, memory.
 import type { ChatPromptPack } from '../../services/chatPrompts';
 
 const SCHEDULE_DIRECT_TERMS = [
@@ -99,13 +100,26 @@ export function isCourseIntent(lower: string): boolean {
 export function isSmartNotificationIntent(lower: string): boolean {
   return containsAny(lower, SMART_NOTIFICATION_TERMS);
 }
+export function isFocusIntent(lower: string): boolean {
+  return containsAny(lower, FOCUS_TERMS);
+}
+export function isIdentityIntent(lower: string): boolean {
+  return containsAny(lower, IDENTITY_TERMS);
+}
+export function isMemoryIntent(lower: string): boolean {
+  return containsAny(lower, MEMORY_TERMS);
+}
 export function isMiscIntent(lower: string): boolean {
   return (
-    containsAny(lower, SMART_NOTIFICATION_TERMS) ||
-    containsAny(lower, FOCUS_TERMS) ||
-    containsAny(lower, IDENTITY_TERMS) ||
-    containsAny(lower, MEMORY_TERMS)
+    isSmartNotificationIntent(lower) ||
+    isFocusIntent(lower) ||
+    isIdentityIntent(lower) ||
+    isMemoryIntent(lower)
   );
+}
+
+function pushOnce(packs: ChatPromptPack[], pack: ChatPromptPack): void {
+  if (!packs.includes(pack)) packs.push(pack);
 }
 
 /** Which packs a message's keywords call for. A schedule *write* always brings
@@ -114,17 +128,45 @@ export function packsForText(text: string): ChatPromptPack[] {
   const lower = text.toLowerCase();
   const packs: ChatPromptPack[] = [];
   const write = isScheduleWriteIntent(lower);
-  if (write || isScheduleReadIntent(lower)) packs.push('scheduleRead');
-  if (write) packs.push('scheduleWrite');
-  if (isTaskIntent(lower)) packs.push('tasks');
-  if (isCourseIntent(lower)) packs.push('courses');
-  if (isMiscIntent(lower)) packs.push('misc');
+  if (write || isScheduleReadIntent(lower)) pushOnce(packs, 'scheduleRead');
+  if (write) {
+    pushOnce(packs, 'actionProtocol');
+    pushOnce(packs, 'scheduleWrite');
+  }
+  if (isTaskIntent(lower)) {
+    pushOnce(packs, 'actionProtocol');
+    pushOnce(packs, 'tasks');
+  }
+  if (isCourseIntent(lower)) {
+    pushOnce(packs, 'actionProtocol');
+    pushOnce(packs, 'courses');
+  }
+  if (isFocusIntent(lower)) {
+    pushOnce(packs, 'actionProtocol');
+    pushOnce(packs, 'focus');
+  }
+  if (isSmartNotificationIntent(lower)) {
+    pushOnce(packs, 'actionProtocol');
+    pushOnce(packs, 'smartNotifications');
+  }
+  if (isIdentityIntent(lower)) pushOnce(packs, 'identity');
+  if (isMemoryIntent(lower)) pushOnce(packs, 'memory');
   return packs;
 }
 
 /** Packs that need to see the live app data (real ids) to act correctly.
  * scheduleRead is excluded — get_schedule returns its own data. */
-export const PACKS_NEEDING_ENTITIES: ChatPromptPack[] = ['scheduleWrite', 'tasks', 'courses'];
+export const PACKS_NEEDING_ENTITIES: ChatPromptPack[] = ['scheduleWrite', 'tasks', 'courses', 'smartNotifications'];
 
 /** Fixed iteration order so the assembled system turns come out stable. */
-export const PACK_ORDER: ChatPromptPack[] = ['scheduleRead', 'scheduleWrite', 'tasks', 'courses', 'misc'];
+export const PACK_ORDER: ChatPromptPack[] = [
+  'actionProtocol',
+  'scheduleRead',
+  'scheduleWrite',
+  'tasks',
+  'courses',
+  'focus',
+  'smartNotifications',
+  'identity',
+  'memory',
+];
